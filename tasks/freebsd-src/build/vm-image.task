@@ -201,7 +201,7 @@ sshd_enable="YES"
     -- Create the main filesystem image.
     if params.image_fs == "ufs" then
         -- XXX-MJ METALOG should be inputs.build.metalog
-        local cmd = "makefs -Z -D -t ffs -o softupdates=1 -o version=2 "
+        local cmd = "makefs -Z -DD -t ffs -o softupdates=1 -o version=2 "
         if params.image_size then
             cmd = cmd .. "-s " .. params.image_size .. " "
         end
