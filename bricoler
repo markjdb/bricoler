@@ -1,0 +1,2818 @@
+#!/usr/bin/env lua54
+
+--
+-- Copyright (c) Mark Johnston <markj@FreeBSD.org>
+--
+-- SPDX-License-Identifier: BSD-2-Clause
+--
+
+local scriptdir = arg[0]:match("(.+)/[^/]+$")
+package.path = package.path .. ";" .. scriptdir .. "/?.lua"
+
+package.path = package.path .. ";" .. scriptdir .. "/contrib/orch/install/share/lua/5.4/?.lua"
+package.cpath = package.cpath .. ";" .. scriptdir .. "/contrib/orch/install/lib/lua/5.4/?.so"
+local orch = require 'orch'
+
+-------------------------------- Lua helpers -------------------------
+
+local function _errx(s, ...)
+    error(string.format(s, ...))
+end
+
+local function printf(fmt, ...)
+    print(string.format(fmt, ...))
+end
+
+local function sprintf(fmt, ...)
+    return string.format(fmt, ...)
+end
+
+local function ansicolor(str, color)
+    local c = {
+        black = 30,
+        red = 31,
+        green = 32,
+        yellow = 33,
+        blue = 34,
+        magenta = 35,
+        cyan = 36,
+        white = 37,
+    }
+    local s = c[color]
+    if not s then
+        _errx("Invalid color: %s", color)
+    end
+    return "\027[" .. tostring(s) .. "m" .. str .. "\027[0m"
+end
+
+local function errx(s, ...)
+    _errx(ansicolor("ERROR", "red") .. ": " .. s, ...)
+end
+
+local function octal(n)
+    return tonumber(n, 8)
+end
+
+-- A dumb string formatter which takes a format string and a table of key-value
+-- pairs.  The string "$key" in the format string is replaced by the value of
+-- that key.  Currently there is no support for escaping.
+local function substitute(s, vars)
+    return s:gsub("%$([%w_]+)", vars)
+end
+
+function io.open_checked(path, mode)
+    local f, errstr = io.open(path, mode)
+    if not f then
+        errx("Failed to open %s: %s", path, errstr)
+    end
+    return f
+end
+
+function table.append(t1, ...)
+    local t2 = {...}
+    for _, v in ipairs(t2) do
+        table.insert(t1, v)
+    end
+    return t1
+end
+
+function table.prepend(t1, ...)
+    local t2 = {...}
+    for i = #t2, 1, -1 do
+        table.insert(t1, 1, t2[i])
+    end
+    return t1
+end
+
+function table.deepcopy(t)
+    local function _deepcopy(from, to)
+        for k, v in pairs(from) do
+            if type(v) == "table" then
+                v = _deepcopy(v, {})
+            end
+            to[k] = v
+        end
+        return to
+    end
+    return _deepcopy(t, {})
+end
+
+-- Make a new table containing all of the KVPs from the input tables.
+-- If a key is present in multiple tables, the value from the last table is
+-- used.
+function table.merge(t, ...)
+    local ret = {}
+    for k, v in pairs(t) do
+        ret[k] = v
+    end
+    for _, u in ipairs({...}) do
+        for k, v in pairs(u) do
+            ret[k] = v
+        end
+    end
+    return ret
+end
+
+-- Return an array of the keys shared by all input tables.
+function table.intersection(t1, ...)
+    local t = table.keys(t1)
+    for _, u in ipairs({...}) do
+        for k, _ in pairs(t) do
+            if not u[k] then
+                t[k] = nil
+            end
+        end
+    end
+    return t
+end
+
+-- Return an array of the keys belonging to all input tables.
+function table.union(...)
+    local t = {}
+    for _, u in ipairs({...}) do
+        for k, _ in pairs(u) do
+            t[k] = true
+        end
+    end
+    return t
+end
+
+-- Return an array of the keys in table t.
+function table.keys(t)
+    local keys = {}
+    for k, _ in pairs(t) do
+        table.insert(keys, k)
+    end
+    return keys
+end
+
+-- Return a string representation of a table.
+function table.pretty(t, maxdepth)
+    local function _pretty(_t, _maxdepth, _depth)
+        if _depth == _maxdepth then
+            return ""
+        end
+        local indent = _depth * 2
+        local s = ""
+        for k, v in pairs(_t) do
+            if type(v) == "table" then
+                s = s .. string.rep(" ", indent) .. k .. "={\n"
+                s = s .. _pretty(v, _maxdepth, _depth + 1)
+                s = s .. string.rep(" ", indent) .. "}\n"
+            else
+                local fv = type(v) == "string" and '"' .. v .. '"' or tostring(v)
+                s = s .. string.rep(" ", indent) .. k .. "=" .. fv .. "\n"
+            end
+        end
+        return s
+    end
+    return _pretty(t, maxdepth, 0)
+end
+
+function orch_spawn(...)
+    print(("%s: %s"):format(ansicolor("ORCH", "green"), table.concat({...}, " ")))
+    local o = orch.spawn(...)
+    if o == nil then
+        errx("Failed to spawn orch")
+    end
+    return o
+end
+
+-------------------------------- sys helpers -------------------------
+-- Miscellaneous low-level system helper functions.  In general these raise an
+-- error if any system call fails.
+
+local _access = require 'lib.freebsd.sys'.access
+local _chdir = require 'lib.freebsd.sys'.chdir
+local _errno = require 'lib.freebsd.sys'.errno
+local getaddrinfo = require 'lib.freebsd.sys'.getaddrinfo
+local _getcwd = require 'lib.freebsd.sys'.getcwd
+local _getuid = require 'lib.freebsd.sys'.getuid
+local _mkdir = require 'lib.freebsd.sys'.mkdir
+local _open = require 'lib.freebsd.sys'.open
+local _pipe = require 'lib.freebsd.sys'.pipe
+local _poll = require 'lib.freebsd.sys'.poll
+local posix_spawn = require 'lib.freebsd.sys'.posix_spawn
+local _read = require 'lib.freebsd.sys'.read
+local _socket = require 'lib.freebsd.sys'.socket
+local _stat = require 'lib.freebsd.sys'.stat
+local _sysctl = require 'lib.freebsd.sys'.sysctl
+local _unlink = require 'lib.freebsd.sys'.unlink
+local _wait = require 'lib.freebsd.sys'.wait
+
+local function access(path, mode)
+    local amode = 0
+    for c in mode:gmatch(".") do
+        if c == "r" then
+            amode = amode + _access.R_OK
+        elseif c == "w" then
+            amode = amode + _access.W_OK
+        elseif c == "x" then
+            amode = amode + _access.X_OK
+        else
+            errx("Invalid mode character '%s'", c)
+        end
+    end
+    return _access.access(path, amode)
+end
+
+local function pwd()
+    return _getcwd.getcwd()
+end
+
+local function cd(path)
+    local oldcwd = pwd()
+    local res, errstr = _chdir.chdir(path)
+    if not res then
+        errx("Failed to change directory to %s: %s", path, errstr)
+    end
+    return oldcwd
+end
+
+local function close(fd)
+    local res, errstr = _open.close(fd)
+    if not res then
+        errx("Failed to close fd: %s", errstr)
+    end
+end
+
+-- Checked process execution.  e.g., exec("ls", "-l", "/").
+--
+-- The last argument may optionally be an array of "VAR=VAL" environment
+-- variables, in which case the process is executed with that as the
+-- environment instead of inheriting it.  Use environ() to get a copy of the
+-- current environment in this case.
+local function _exec(p, ...)
+    local args = {p, ...}
+    local env = nil
+    if type(args[#args]) == "table" then
+        env = args[#args]
+        args[#args] = nil
+    end
+    print(("%s: %s"):format(ansicolor("EXEC", "green"), table.concat(args, " ")))
+    local pid, errstr = posix_spawn.posix_spawnp(p, args, env)
+    if not pid then
+        errx("Failed to run %s: %s", p, errstr)
+    end
+
+    return _wait.waitpid(pid)
+end
+
+local function exec(p, ...)
+    local ret, status, num = _exec(p, ...)
+    if not ret then
+        errx("Failed to wait for %s: %s", p, status)
+    elseif status == "signaled" then
+        errx("Process %s exited on signal: %d", p, num)
+    elseif status == "exited" and num ~= 0 then
+        errx("Process %s exited with status: %d", p, num)
+    end
+end
+
+local function _rootexec(...)
+    print(("%s: %s"):format(ansicolor("PRIV", "yellow"), table.concat({...}, " ")))
+    return _exec("sudo", ...)
+end
+
+local function rootexec(...)
+    print(("%s: %s"):format(ansicolor("PRIV", "yellow"), table.concat({...}, " ")))
+    exec("sudo", ...)
+end
+
+local function mkdir(path, mode)
+    return _mkdir.mkdir(path, mode or octal("0755"))
+end
+
+-- Make a directory, don't fail if it already exists.  Morally equivalent to
+-- mkdir -p.
+local function makepath(path, mode)
+    local root = path:match("^/") and "/" or "./"
+    path = root .. path
+    for component in path:gmatch("[^/]+") do
+        root = root .. "/" .. component
+        local sb = _stat.stat(root)
+        if not sb then
+            mkdir(root, mode)
+        elseif not _stat.S_ISDIR(sb.mode) then
+            errx("Path %s is not a directory", root)
+        end
+    end
+end
+
+-- Create a directory and cd into it.
+local function mkdircd(path)
+    makepath(path)
+    cd(path)
+end
+
+-- Run a command, waiting until it completes and returning its standard output
+-- and standard error.  All output is buffered in memory, so don't use it for
+-- large output.
+--
+-- This waits until the command exits before returning, and raises an error for
+-- abnormal exits.
+local function runcmd(p, ...)
+    local args = {p, ...}
+    print(("%s: %s"):format(ansicolor("EXEC", "green"), table.concat(args, " ")))
+
+    local stdout1, stdout2 = _pipe.pipe()
+    local stderr1, stderr2 = _pipe.pipe()
+
+    local fa, errstr = posix_spawn.posix_spawn_file_actions_init()
+    if not fa then
+        errx("Failed to create file actions: %s", errstr)
+    end
+
+    local function addfa(f, ...)
+        _, errstr = f(...)
+        if errstr then
+            errx("Failed to add file action: %s", errstr)
+        end
+    end
+    addfa(posix_spawn.posix_spawn_file_actions_adddup2, fa, stdout2, 1)
+    addfa(posix_spawn.posix_spawn_file_actions_adddup2, fa, stderr2, 2)
+    addfa(posix_spawn.posix_spawn_file_actions_addclose, fa, stdout1)
+    addfa(posix_spawn.posix_spawn_file_actions_addclose, fa, stderr1)
+    addfa(posix_spawn.posix_spawn_file_actions_addclose, fa, stdout2)
+    addfa(posix_spawn.posix_spawn_file_actions_addclose, fa, stderr2)
+
+    local pid
+    pid, errstr = posix_spawn.posix_spawnp(p, fa, args)
+    if not pid then
+        errx("Failed to run %s: %s", p, errstr)
+    end
+
+    close(stdout2)
+    close(stderr2)
+
+    local pollfds = {
+        {fd = stdout1, events = _poll.POLLIN, buf = ""},
+        {fd = stderr1, events = _poll.POLLIN, buf = ""},
+    }
+    local closed = 0
+    repeat
+        local res
+        res, errstr = _poll.poll(pollfds, -1)
+        if not res then
+            errx("Failed to poll: %s", errstr)
+        end
+
+        for _, fd in ipairs(pollfds) do
+            if fd.revents & _poll.POLLIN then
+                repeat
+                    local buf
+                    buf, errstr = _read.read(fd.fd, 4096)
+                    if not buf then
+                        errx("Failed to read from fd: %s", errstr)
+                    end
+                    fd.buf = fd.buf .. buf
+                until buf == ""
+            end
+            if fd.revents & _poll.POLLHUP then
+                fd.fd = -1
+                closed = closed + 1
+            end
+        end
+    until closed == #pollfds
+
+    local ret, status, num = _wait.waitpid(pid)
+    if not ret then
+        errx("Failed to wait for %s: %s", p, status)
+    elseif status == "signaled" then
+        errx("Process %s exited on signal: %d", p, num)
+    elseif status == "exited" and num ~= 0 then
+        errx("Process %s exited with status: %d", p, num)
+    end
+
+    return pollfds[1].buf, pollfds[2].buf
+end
+
+-- Find an unused v4 TCP port that we can listen on.
+local function unused_tcp_port(addr)
+    local s = _socket.socket(_socket.PF_INET, _socket.SOCK_STREAM, 0)
+    if not s then
+        errx("Failed to create socket")
+    end
+
+    for _ = 0, 10000 do
+        local rand = math.random(1024, 65535)
+        local hint = {
+            family = _socket.PF_INET,
+            socktype = _socket.SOCK_STREAM,
+            flags = _socket.AI_PASSIVE,
+        }
+        local t = getaddrinfo.getaddrinfo(addr, rand, hint)
+        if #t == 0 then
+            errx("Failed to resolve address")
+        end
+        local res = _socket.bind(s, t[1].addr)
+        close(s)
+        if res then
+            return addr .. ":" .. rand
+        end
+    end
+    errx("Failed to find an unused TCP port")
+end
+
+-- Return the environment as an array of "VAR=VAL" strings.
+local function environ()
+    local env = {}
+    local stdout = runcmd("env", "-0")
+    for line in stdout:gmatch("[^\0]+") do
+        table.insert(env, line)
+    end
+    return env
+end
+
+-- Return true if an interface with the given name exists.  At some point this
+-- needs to be re-implemented using libifconfig.
+local function netif_exists(iface, group)
+    local list
+    if group then
+        list = runcmd("ifconfig", "-g", group)
+    else
+        list = runcmd("ifconfig", "-l")
+    end
+    for line in list:gmatch("%S+") do
+        if line == iface then
+            return true
+        end
+    end
+    return false
+end
+
+local function zfs_get(path, prop)
+    local stdout = runcmd("zfs", "get", "-H", "-o", "value", prop, path)
+    return stdout:match("%S+")
+end
+
+local function sysctl(name)
+    return _sysctl.sysctlbyname(name)
+end
+
+local function host_machine()
+    return sysctl("hw.machine") .. "/" .. sysctl("hw.machine_arch")
+end
+
+local function which(p)
+    local PATH = os.getenv("PATH")
+    if PATH == nil then
+        errx("PATH environment variable is unset")
+    end
+    for path in PATH:gmatch("([^:]+)") do
+        local candidate = path .. "/" .. p
+        local sb = _stat.stat(candidate)
+        if sb and _stat.S_ISREG(sb.mode) and access(candidate, "rx") then
+            return candidate
+        end
+    end
+end
+
+local function writefile(path, contents)
+    local f = io.open_checked(path, "w+")
+    f:write(contents)
+    f:close()
+end
+
+local function unlink(path)
+    return _unlink.unlink(path)
+end
+
+-------------------------------- Utility Classes ---------------------
+
+local Class = require 'class'
+
+local MTree = Class({
+    defaults = {},
+    _entries = {},
+    signature = "#mtree 2.0",
+}, {
+    -- Default values for file entries.
+    defaults = "table",
+    -- Path to the input mtree file.
+    src = "string",
+    -- Root of the hierarchy defined by the mtree.
+    root = "string",
+})
+
+-- Load an mtree file into memory.
+function MTree:_ctor(args)
+    local f = io.open_checked(args.src, "r")
+    local sig = f:read("l")
+    if not sig then
+        errx("Failed to read mtree signature")
+    end
+    if sig ~= self.signature then
+        errx("Unsupported mtree signature '%s'", sig)
+    end
+    -- Parse each line in the mtree file, e.g.,
+    --   ./bin type=dir uname=root gname=wheel mode=0755
+    -- Each line yields a table of key-value pairs.  The first element is saved
+    -- in the table as well, keyed by "path".  The order of lines is preserved.
+    -- We assume a flat mtree file, as generated by "mtree -C".
+    for line in f:lines() do
+        if line:match("^%s*#") then
+            goto nextline
+        end
+        local entry = {}
+        for k, v in line:gmatch("(%w+)=(%S+)") do
+            entry[k] = v
+        end
+        entry.path = line:match("^(%S+)")
+        if entry.path == nil then
+            errx("Invalid mtree line: %s", line)
+        end
+        table.insert(self._entries, entry)
+        ::nextline::
+    end
+    f:close()
+end
+
+function MTree:add(path)
+    local fullpath = self.root .. "/" .. path
+    local sb = _stat.stat(fullpath)
+    if not sb then
+        errx("Failed to stat %s", fullpath)
+    end
+
+    local mode = ("%04o"):format(sb.mode & 0x1ff)
+    local type = ""
+    if _stat.S_ISDIR(sb.mode) then
+        type = "dir"
+    elseif _stat.S_ISREG(sb.mode) then
+        type = "file"
+    else
+        errx("Path %s is not a directory or regular file", fullpath)
+    end
+    table.insert(self._entries, {
+        path = path,
+        mode = mode,
+        type = type,
+        uname = self.defaults.uname,
+        gname = self.defaults.gname,
+    })
+end
+
+function MTree:filter(f)
+    local entries = {}
+    for _, entry in ipairs(self._entries) do
+        if f(entry) then
+            table.insert(entries, entry)
+        end
+    end
+    self._entries = entries
+end
+
+function MTree:stage(tmpfile, rootdir, reldir)
+    local targetdir = rootdir .. "/" .. reldir
+    local function write_buffer(file, buf)
+        local f = io.open_checked(file, "w+")
+        f:write(buf)
+        f:close()
+    end
+    local out = runcmd("mtree", "-c", "-p", targetdir)
+    write_buffer(tmpfile, out)
+    out = runcmd("mtree", "-C", "-p", targetdir, "-f", tmpfile)
+    write_buffer(tmpfile, out)
+
+    local f = io.open_checked(tmpfile, "r")
+    for line in f:lines() do
+        if not line:match("^%s*#") then
+            local path = line:match("^%S+")
+            local prefix = "./" .. reldir
+            if path == "." then
+                -- makefs will reject a path like "./foo/.".
+                self:add(prefix)
+            else
+                self:add(prefix .. "/" .. path)
+            end
+        end
+    end
+    f:close()
+end
+
+function MTree:map(f)
+    local entries = {}
+    for _, entry in ipairs(self._entries) do
+        table.insert(entries, f(entry))
+    end
+    self._entries = entries
+end
+
+-- Write the in-memory mtree to a file.
+function MTree:write(path)
+    local f = io.open_checked(path, "w+")
+    f:write(self.signature .. "\n")
+    for _, entry in ipairs(self._entries) do
+        local line = entry.path
+        for k, v in pairs(entry) do
+            if k ~= "path" then
+                line = line .. " " .. k .. "=" .. v
+            end
+        end
+        f:write(line .. "\n")
+    end
+    f:close()
+end
+
+local GitRepository = {}
+
+function GitRepository.checked_out_branch(path)
+    local stdout = runcmd("git", "-C", path, "rev-parse", "--abbrev-ref", "HEAD")
+    return stdout:match("%S+")
+end
+
+function GitRepository.clone_or_update(path, params)
+    local branch, url = params.branch, params.url
+    local sb, err, errno = _stat.stat(path)
+    if not sb then
+        if errno ~= _errno.ENOENT then
+            errx("Failed to stat %s: %s", path, err)
+        end
+        exec("git", "clone", "--branch=" .. branch, url, path)
+    else
+        if not _stat.S_ISDIR(sb.mode) then
+            errx("Path %s is not a directory", path)
+        end
+        local oldcwd = cd(path)
+        exec("git", "fetch")
+        do
+            -- Don't do anything if there are local changes.  A more useful
+            -- behaviour might be to stash them and apply after the update. 
+            local status = runcmd("git", "diff", "--stat")
+            if status ~= "" then
+                errx("Repository %s has local changes", path)
+            end
+        end
+        exec("git", "reset", "--hard", "origin/" .. branch)
+        cd(oldcwd)
+    end
+end
+
+function GitRepository.task_parameters()
+    return {
+        branch = {
+            description = "The branch to check out when cloning",
+        },
+        url = {
+            description = "A URL for the repository; provide a path to use an existing clone",
+            required = true,
+            type = "string",
+        },
+    }
+end
+
+local VMRun = Class({
+    vm = {},
+}, {
+    -- Name of the CPU to emulate.
+    cpu = "string",
+    -- A list of extra files to add as disks.
+    disk_list = "string",
+    -- The hyperisor to use.
+    hypervisor = "string",
+    -- Path to the VM's disk image.
+    image = "string",
+    -- Run QEMU in its own pty (using orch)?
+    interactive = "boolean",
+    -- Name of the QEMU machine to emulate.
+    machine = "string",
+    -- The machine type of the image, e.g., arm64/aarch64.
+    machine_tuple = "string",
+    -- How much memory to allocate to the VM, in MB.
+    memory = "number",
+    -- The number of CPUs to allocate to the VM.
+    ncpus = "number",
+    -- The addr:port on which to listen for SSH connections.
+    ssh_addr = function (v) return v:match("^[^:]+:%d+$") end,
+    -- The addr:port on which to listen for gdb connections.
+    gdb_addr = function (v) return v:match("^[^:]+:%d+$") end,
+})
+
+-- Provide a standard set of parameters for tasks which start a VM.
+--
+-- Unfortunately, we cannot currently define default values for "bios", "cpu"
+-- and "machine" here since they are platform-dependent.
+function VMRun.task_parameters()
+    return {
+        bios = {
+            description = "Path to the firmware image to use",
+            type = "string",
+        },
+        cpu = {
+            -- This parameter is really only defined for QEMU.
+            description = "The CPU to emulate",
+            type = "string",
+        },
+        disk_list = {
+            description = "Additional files to add as disks",
+            type = "string",
+            default = "",
+        },
+        hypervisor = {
+            description = "The hypervisor to use",
+            valid = {"bhyve", "qemu"},
+            default = "qemu",
+        },
+        interactive = {
+            description = "Run QEMU interactively",
+            default = true,
+        },
+        machine = {
+            -- This parameter is really only defined for QEMU.
+            description = "The QEMU machine type to emulate",
+            type = "string",
+        },
+        memory = {
+            description = "Amount of memory to allocate to the VM, in MB",
+            type = "number",
+        },
+        ncpus = {
+            description = "Number of virtual CPUs to allocate to the VM",
+            type = "number",
+        },
+    }
+end
+
+function VMRun:boot()
+    self.vm:boot()
+    if not self.interactive then
+        self.vm.orch:log("/dev/stdout")
+        -- Booting might be slow since it has to install packages.
+        --
+        -- The orch documentation seems to suggest that the timeout should
+        -- be updated using a function call, but apparently not...?
+        self.vm.orch.timeout = 5 * 60
+        self.vm.orch:release()
+        if not self.vm.orch:match("login:") then
+            errx("VM boot timed out")
+        end
+        self.vm.orch:write("root\n")
+        self.vm.orch:match("root@.*#")
+    end
+end
+
+-- Execute a command on the console and wait for the shell prompt.
+function VMRun:consrun(cmd, timeout)
+    if self.interactive then
+        return
+    end
+    self.vm.orch:write(cmd .. "\n")
+    self.vm.orch.timeout = timeout or 5
+    self.vm.orch:match("root@.*#")
+end
+
+function VMRun:scpfrom(user, key, src, dst)
+    local addr, port = self.ssh_addr:match("([^:]+):(%d+)")
+    exec("scp",
+         "-i", key,
+         "-P", port,
+         "-o", "StrictHostKeyChecking=no",
+         "-o", "UserKnownHostsFile=/dev/null",
+         user .. "@" .. addr .. ":" .. src,
+         dst
+    )
+end
+
+local BhyveRun = Class({
+    runargs = {},
+    memory = 1024,
+    name = "",
+    ncpus = 1,
+    orch = {},
+}, VMRun._props)
+
+function BhyveRun:_bootrom()
+    if self.machine_tuple == "amd64/amd64" then
+        return {
+            "/usr/local/share/uefi-firmware/BHYVE_UEFI.fd",
+            "edk2-bhyve"
+        }
+    elseif self.machine_tuple == "arm64/aarch64" then
+        return {
+            "/usr/local/share/u-boot/u-boot-bhyve-arm64/u-boot.bin",
+            "u-boot-bhyve-arm64"
+        }
+    else
+        return nil
+    end
+end
+
+function BhyveRun:_ctor()
+    -- Can we boot the image?
+    local bootrom = ""
+    do
+        local host = host_machine()
+        if host == "amd64/amd64" then
+            if self.machine_tuple ~= "amd64/amd64" and
+               self.machine_tuple ~= "i386/i386" then
+                errx("Host machine is %s, but machine type is %s",
+                     host, self.machine_tuple)
+            end
+        elseif host == "arm64/aarch64" then
+            if self.machine_tuple ~= "arm64/aarch64" then
+                errx("Host machine is %s, but machine type is %s",
+                     host, self.machine_tuple)
+            end
+        else
+            errx("Unsupported host machine %s", host)
+        end
+
+        local bios = self:_bootrom()
+        if not bios then
+            errx("Boot ROM not available for machine type %s", self.machine_tuple)
+        end
+        bootrom = bios[1]
+        if not access(bootrom, "r") then
+            errx("Boot ROM %s is not available, install %s", bootrom, bios[2])
+        end
+    end
+
+    local vmname = "bricoler"
+
+    -- Build up the command-line arguments for bhyve.
+    local bhyveargs = {}
+    do
+        local devindex = 0
+        local function adddev(desc)
+            local dev = sprintf("%d:0,%s", devindex, desc)
+            table.append(bhyveargs, "-s", dev)
+            devindex = devindex + 1
+        end
+
+        table.append(bhyveargs,
+            "bhyve",
+            "-m", tostring(self.memory) .. "M",
+            "-c", tostring(self.ncpus))
+        adddev("hostbridge")
+        if self.machine_tuple == "amd64/amd64" or
+           self.machine_tuple == "i386/i386" then
+            table.append(bhyveargs, "-H", "-P")
+            table.append(bhyveargs, "-l", "com1,stdio")
+            table.append(bhyveargs, "-l", "bootrom," .. bootrom)
+            adddev("lpc")
+        else
+            table.append(bhyveargs, "-o", "console=stdio")
+            table.append(bhyveargs, "-o", "bootrom=" .. bootrom)
+        end
+        adddev("virtio-blk," .. self.image)
+        if self.disk_list then
+            for disk in self.disk_list:gmatch("%S+") do
+                adddev("virtio-blk," .. disk)
+            end
+        end
+        if self.gdb_addr then
+            table.append(bhyveargs, "-G", self.gdb_addr)
+        end
+        if self.ssh_addr then
+            -- This must be added last to work around a bhyve bug on arm64,
+            -- see https://reviews.freebsd.org/D45049.
+            adddev(sprintf("virtio-net,slirp,hostfwd=tcp:%s-:22", self.ssh_addr))
+        end
+
+        table.append(bhyveargs, vmname)
+    end
+
+    self.name = vmname
+    self.runargs = bhyveargs
+end
+
+function BhyveRun:boot()
+    _rootexec("bhyvectl", "--destroy", "--vm=" .. self.name)
+    if self.interactive then
+        _rootexec(table.unpack(self.runargs))
+    else
+        table.prepend(self.runargs, "sudo")
+        self.orch = orch_spawn(table.unpack(self.runargs))
+    end
+    _rootexec("bhyvectl", "--destroy", "--vm=" .. self.name)
+end
+
+local QEMURun = Class({
+    args = {},
+    memory = 1024,
+    ncpus = 1,
+    orch = {},
+}, VMRun._props)
+
+-- Return a path to the QEMU executable for this platform.
+function QEMURun:_binary()
+    local bins = {
+        ["amd64/amd64"] = "qemu-system-x86_64",
+        ["i386/i386"] = "qemu-system-i386",
+        ["arm64/aarch64"] = "qemu-system-aarch64",
+        ["arm/armv7"] = "qemu-system-arm",
+        ["riscv/riscv64"] = "qemu-system-riscv64",
+    }
+    local bin = bins[self.machine_tuple]
+    if not bin then
+        errx("Unsupported machine type %s", self.machine_tuple)
+    end
+    local path = which(bin)
+    if not path then
+        errx("QEMU is not in PATH, make sure it is installed")
+    end
+    return path
+end
+
+-- Return the path to the firmware image to use in the guest, and the FreeBSD
+-- port from which it is installed.
+function QEMURun:_bios()
+    local bioses = {
+        ["arm64/aarch64"] = {
+            "/usr/local/share/qemu/edk2-aarch64-code.fd", "qemu"
+        },
+        ["arm/armv7"] = {
+            "/usr/local/share/u-boot/u-boot-qemu-arm/u-boot.bin", "u-boot-qemu-arm",
+        },
+        ["riscv/riscv64"] = {
+            "/usr/local/share/opensbi/lp64/generic/firmware/fw_jump.elf", "opensbi",
+        },
+    }
+    return bioses[self.machine_tuple]
+end
+
+function QEMURun:_cpu()
+    if self.cpu then
+        return self.cpu
+    end
+    if self.machine_tuple == "riscv/riscv64" then
+        -- u-boot panics with "-cpu max", needs investigation.
+        return "any"
+    end
+    return "max"
+end
+
+function QEMURun:_kernel()
+    local kernels = {
+        ["riscv/riscv64"] = {
+            "/usr/local/share/u-boot/u-boot-qemu-riscv64/u-boot.bin", "u-boot-qemu-riscv64",
+        },
+    }
+    return kernels[self.machine_tuple]
+end
+
+function QEMURun:_machine()
+    if self.machine then
+        return self.machine
+    end
+    local machines = {
+        ["amd64/amd64"] = "q35",
+        ["i386/i386"] = "q35",
+        ["powerpc/powerpc64"] = "pseries,cap-hpt-max-page-size=16M",
+    }
+    return machines[self.machine_tuple] or "virt"
+end
+
+function QEMURun:_ctor(args)
+    if not self.interactive then
+        -- If we're interactive, we have no use for orch.
+        self.orch = nil
+    end
+
+    -- Build up the QEMU command-line arguments based on our parameters.
+    do
+        local bios, cpu, kernel, machine = self:_bios(), self:_cpu(), self:_kernel(), self:_machine()
+        local qemuargs = {}
+        table.append(qemuargs,
+            self:_binary(),
+            "-nographic",
+            "-no-reboot",
+            "-smp", tostring(self.ncpus),
+            "-m", tostring(self.memory) .. "M",
+            "-cpu", cpu,
+            "-M", machine)
+        if bios then
+            if not access(bios[1], "r") then
+                errx("BIOS image %s is not available, install %s", bios[1], bios[2])
+            end
+            table.append(qemuargs, "-bios", bios[1])
+        end
+        if kernel then
+            if not access(kernel[1], "r") then
+                errx("Kernel image %s is not available, install %s", kernel[1], kernel[2])
+            end
+            table.append(qemuargs, "-kernel", kernel[1])
+        end
+        self.disk_list = self.image .. " " .. self.disk_list
+        local i = 0
+        for disk in self.disk_list:gmatch("%S+") do
+            local id = sprintf("image%d", i)
+            table.append(qemuargs, "-device", "virtio-blk-pci,drive=" .. id)
+            table.append(qemuargs,
+                         "-drive",
+                         sprintf("file=%s,format=raw,if=none,id=%s", disk, id))
+            i = i + 1
+        end
+        if self.gdb_addr then
+            table.append(qemuargs, "-gdb", "tcp:" .. self.gdb_addr)
+        end
+        if self.ssh_addr then
+            table.append(qemuargs, "-device", "virtio-net-pci,netdev=net0")
+            table.append(qemuargs, "-netdev",
+                         sprintf("user,id=net0,restrict=y,hostfwd=tcp:%s-:22,id=net0",
+                                 self.ssh_addr))
+        end
+        self.args = qemuargs
+    end
+end
+
+function QEMURun:boot()
+    if self.interactive then
+        exec(table.unpack(self.args))
+    else
+        self.orch = orch_spawn(table.unpack(self.args))
+    end
+end
+
+function VMRun:_ctor(args)
+    local hypervisor = args.hypervisor
+    args.hypervisor = nil
+    if hypervisor == "bhyve" then
+        self.vm = BhyveRun(args)
+    elseif hypervisor == "qemu" then
+        self.vm = QEMURun(args)
+    else
+        errx("Unsupported hypervisor %s", self.vm.hypervisor)
+    end
+end
+
+-------------------------------- Task stuff --------------------------
+
+local TaskParameter = Class({
+    parent = {},
+    source = "",
+    valid = function () return true end,
+    _value = "",
+}, {
+    -- Textual description of the parameter.
+    description = "string",
+    -- Default value for the parameter.
+    default = "*",
+    -- Name of the parameter in the enclosing task.  Should not be set in the
+    -- task definition.
+    name = "string",
+    -- Does this need to be set for the task to run?
+    required = "boolean",
+    -- Type of the parameter, can be inferred from the default.
+    type = "string",
+    -- A predicate which says whether the value is valid.  Can be a function
+    -- which takes the value as input and returns a boolean, or a table of
+    -- permitted values.
+    valid = function (v) return type(v) == "function" or type(v) == "table" end,
+})
+
+function TaskParameter:_ctor(args)
+    if args.default ~= nil then
+        if args.type == nil then
+            self.type = type(args.default)
+        end
+        self:bind(args.default, "default")
+    end
+end
+
+-- Set the value for a task parameter.  This can come from multiple sources, so
+-- let the caller record itself to make it easier to trace the origin of a
+-- value.
+function TaskParameter:bind(v, source)
+    -- Is the value valid according to the parameter definition?
+    do
+        local valid = false
+        if type(self.valid) == "function" then
+            valid = self.valid(v)
+            assert(type(valid) == "boolean")
+        else
+            for _, candidate in ipairs(self.valid) do
+                if v == candidate then
+                    valid = true
+                    break
+                end
+            end
+        end
+        if not valid then
+            errx("Invalid value for parameter '%s'", self.name)
+        end
+    end
+
+    -- Convert string values of type "boolean" to actual booleans so that
+    -- truth tests work as expected.
+    do
+        if self.type == "boolean" and type(v) ~= "boolean" then
+            if v == "true" then
+                v = true
+            elseif v == "false" then
+                v = false
+            else
+                errx("Invalid boolean value for parameter '%s'", self.name)
+            end
+        elseif self.type == "number" then
+            v = tonumber(v)
+            if v == nil then
+                errx("Invalid number value for parameter '%s'", self.name)
+            end
+        end
+    end
+
+    self.source = source
+    self._value = v
+end
+
+function TaskParameter:bound()
+    return self.source ~= ""
+end
+
+function TaskParameter:value()
+    if not self:bound() then
+        return nil
+    end
+    return self._value
+end
+
+-- A task encapsulates some code that a user wants to run as part of a workflow.
+-- This could be something like cloning a repository, running a build command,
+-- booting a VM, etc..
+--
+-- A task's parameters are user-configurable and can be interrogated by the
+-- framework.
+--
+-- Each task has to implement a default run() action, which Does The Thing.
+-- However, it may also support auxilliary actions.  For example the
+-- FreeBSDVMBoot task's default action would be to boot the VM, but one could
+-- also use ssh action to ssh into the VM.
+local Task = Class({
+    _done = false,
+    _out = {},
+    _run = function () end,
+
+    actions = {},
+    dependencies = {},
+    inputs = {},
+    outputs = {},
+    parameters = {},
+
+    starttime = 0,
+    endtime = 0,
+}, {
+    _workdir = "string",
+
+    -- Parent task name.
+    [1] = "string",
+
+    -- A list of additional commands that can be run within the task workdir.
+    -- Generally, tasks will just implement run() and leave it at that, but in
+    -- some cases it might be useful to run secondary tasks.
+    actions = "table",
+    -- List of executables that need to be in the PATH.
+    dependencies = "table",
+    -- Textual descriptions of what the task does.
+    description = "string",
+    long_description = "string",
+    -- List of tasks that need to run before this one.
+    inputs = "table",
+    -- Unique name for this task.
+    name = "string",
+    -- Descriptions of output values from the task.
+    outputs = "table",
+    -- Parameter definitions.
+    parameters = "table",
+    -- Run the task.  A single "self" parameter is provided, a table with
+    -- parameter values and objects bound to the keys in the task definition.
+    run = "function",
+})
+
+-- Global set of tasks, keyed by task name.
+local tasks = {}
+
+function Task:_ctor(props)
+    -- Register the task in the global database.
+    if not props.name then
+        errx("Task definition is missing a name")
+    elseif tasks[props.name] then
+        errx("Task '%s' has multiple definitions", props.name)
+    end
+    tasks[props.name] = self
+
+    local parent
+    if self[1] then
+        parent = tasks[self[1]]
+        if not parent then
+            errx("Task '%s' parent '%s' does not exist", props.name, self[1])
+        end
+    end
+    -- Swizzle the run() implementation.  _run is the function that the task
+    -- implements (called "run" in the task definition), and Task:run() is a
+    -- wrapper which sets up context.  If the task inherits from another task
+    -- and defines its own "run" implementation, it can call the parent's
+    -- implementation using "super".
+    do
+        local run = props.run
+        if not props.run then
+            if parent then
+                run = parent._run
+            else
+                errx("Task '%s' has no run() implementation", props.name)
+            end
+        elseif parent then
+            self.super = parent._run
+        end
+        self._run = run
+        self.run = Task.run
+    end
+
+    -- Normalize input definitions.  They can be of the form
+    --   inputname = "task"
+    -- or
+    --   inputname = {"task", param1 = value1, ... }
+    -- Convert the first form to the second.
+    do
+        for k, v in pairs(self.inputs) do
+            if type(v) == "string" then
+                self.inputs[k] = {v}
+            end
+        end
+    end
+
+    -- Inherit input, parameter and output descriptions from the parent task.
+    -- Also pick up dependencies and auxilliary actions.
+    if parent then
+        for k, v in pairs(parent.inputs) do
+            if self.inputs[k] then
+                local input = self.inputs[k]
+                if input[1] == v[1] then
+                    self.inputs[k] = table.merge(v, input)
+                end
+            else
+                self.inputs[k] = v
+            end
+        end
+        for k, v in pairs(parent.parameters) do
+            self.parameters[k] = table.merge(v, self.parameters[k])
+        end
+        for k, v in pairs(parent.outputs) do
+            if not self.outputs[k] then
+                self.outputs[k] = v
+            end
+        end
+
+        self.dependencies = table.merge(self.dependencies, parent.dependencies)
+        self.actions = table.merge(self.actions, parent.actions)
+    end
+
+    -- Make sure that the task's namespace is clean.  All parameter, input and
+    -- output names must be unique with respect to each other.  Some names are
+    -- reserved.
+    do
+        local function check_overlap(me, k1, k2)
+            local t = table.intersection(me[k1], me[k2])
+            if #t > 0 then
+                errx("Task '%s' has %s and %s with the same name: %s",
+                     props.name, k1, k2, table.concat(t, ", "))
+            end
+        end
+        check_overlap(self, "parameters", "inputs")
+        check_overlap(self, "parameters", "outputs")
+        check_overlap(self, "inputs", "outputs")
+        for k, _ in pairs(table.union(self.parameters, self.inputs, self.outputs)) do
+            if k == "run" then
+                errx("Task '%s' is using a reserved name: %s", props.name, k)
+            elseif k:match("^_") then
+                -- Keep this space for internal use.
+                errx("Task '%s' value name starts with an underscore: %s", props.name, k)
+            end
+        end
+    end
+
+    setmetatable(self, {
+        __call = function (task, ...)
+            if select("#", ...) ~= 1 then
+                errx("Task constructor takes a single table argument")
+            end
+            local t = select(1, ...)
+            for k, _ in pairs(t) do
+                local p = self.parameters[k]
+                if not p then
+                    errx("Task '%s' has no parameter '%s'", self.name, k)
+                end
+            end
+            return task
+        end
+    })
+end
+
+-- Set up the execution context for a task.  In short, we create a table which:
+-- * has the task parameter values bound to keys,
+-- * has input tasks bound to keys,
+-- * can be used to set output values, consumed by the calling task.
+-- Also create and cd into the working directory for that particular task.
+function Task:run(ctx)
+    local prefix = ansicolor("TASK", "yellow") .. ": " .. self.name
+    if self._done then
+        print(prefix .. " already done")
+        return self._out
+    end
+
+    local params = {}
+    for k, v in pairs(self.parameters) do
+        params[k] = v:value()
+    end
+    for k, v in pairs(self.inputs) do
+        assert(params[k] == nil)
+        params[k] = v
+    end
+    params.run = function (me) return me end
+    params.super = self.super
+
+    -- Add a metatable to catch accesses of keys that don't exist.
+    local mt = {
+        __index = function (_, k)
+            if not self.parameters[k] then
+                errx("No key '%s' in task context", k)
+            end
+            return nil
+        end,
+        __newindex = function (t, k, v)
+            if self.outputs[k] == nil then
+                errx("Task '%s' has no output '%s'", self.name, k)
+            end
+            rawset(t, k, v)
+        end,
+    }
+    setmetatable(params, mt)
+
+    local oldcwd = pwd()
+    mkdircd(ctx.workdir .. "/" .. self.name)
+
+    -- If we were asked to invoke an auxilliary action, do that instead
+    -- of running the main action.
+    if ctx.action then
+        local action = self.actions[ctx.action]
+        if not action then
+            errx("Task '%s' has no action '%s'", self.name, ctx.action)
+        end
+        action(params)
+    else
+        print(prefix .. " running")
+        self.starttime = os.time()
+        self._run(params, ctx)
+        self.endtime = os.time()
+        for k, _ in pairs(self.outputs or {}) do
+            if params[k] == nil then
+                errx("Task '%s' did not set output '%s'", self.name, k)
+            end
+            self[k] = params[k]
+        end
+        self._done = true
+        self._out = params
+
+        print(sprintf("%s done (%d seconds)", prefix, os.difftime(self.endtime, self.starttime)))
+    end
+
+    cd(oldcwd)
+    return params
+end
+
+local TaskSchedule = Class({
+    -- A table of tasks that will be executed as part of executing the target
+    -- task.  This is keyed by task name; in particular, a given task can be
+    -- scheduled at most once.
+    tasks = {},
+}, {
+    -- A table of key-value pairs that get passed to all tasks.
+    ctx = "table",
+    -- An array of task parameters set on the command line.  Each entry is of
+    -- the form '<task name>=<value>'.
+    parameters = "table",
+    -- The name of the task to run.
+    target = "string",
+    -- The root of the working directory in which all tasks will run.
+    workdir = "string",
+})
+
+function TaskSchedule:_ctor(args)
+    if not tasks[args.target] then
+        errx("Unknown target task '%s'", args.target)
+    end
+
+    -- Build the list of tasks that we will run, check for dependencies.
+    local function add_inputs(t)
+        for _, input in pairs(t.inputs) do
+            local name = input[1]
+            local task = tasks[name]
+            if not task then
+                errx("Task '%s' has unknown input '%s'", t.name, name)
+            end
+            add_inputs(tasks[name])
+        end
+        for _, dep in ipairs(t.dependencies) do
+            if not which(dep) then
+                errx("Task '%s' requires '%s' to be in PATH", t.name, dep)
+            end
+        end
+
+        if not self.tasks[t.name] then
+            for k, v in pairs(t.parameters) do
+                t.parameters[k] = TaskParameter(v)
+            end
+            self.tasks[t.name] = t
+        end
+    end
+    add_inputs(tasks[self.target])
+
+    -- Bind parameter values from higher-level tasks.
+    for _, task in pairs(self.tasks) do
+        for iname, input in pairs(task.inputs) do
+            local name = input[1]
+            local itask = self.tasks[name]
+            task.inputs[iname] = itask
+            for k, v in pairs(input) do
+                if k ~= 1 then
+                    local param = itask.parameters[k]
+                    if not param then
+                        errx("Task '%s' has no parameter '%s'", itask.name, k)
+                    end
+                    if param.source:match("specified by ") then
+                        -- More than one task has set this parameter.  We don't
+                        -- know which one should win.
+                        errx("Task '%s' has multiple sources for parameter '%s'",
+                             task.name, k)
+                    end
+                    itask.parameters[k]:bind(v, "specified by " .. task.name)
+                end
+            end
+        end
+    end
+
+    -- Bind parameter values from the command line.
+    for _, s in ipairs(args.parameters) do
+        local t, p, v = s:match("([^=:]+):([^=]+)=(.*)")
+        if not t then
+            errx("Invalid parameter '%s', should be <task>:<param>=<value>", s)
+        end
+        local task = self.tasks[t]
+        if not task then
+            errx("Unknown task '%s' in '%s'", t, s)
+        end
+        local param = task.parameters[p]
+        if not param then
+            errx("Task '%s' has no parameter '%s'", task.name, p)
+        end
+        param:bind(v, "command line")
+    end
+end
+
+-- Run the target task.  In general the "run" implementation of the target
+-- will invoke that of all subordinate tasks.
+function TaskSchedule:run()
+    -- Are any required parameters unbound?
+    do
+        for _, task in pairs(self.tasks) do
+            for _, param in pairs(task.parameters) do
+                if param.required and not param:bound() then
+                    errx("Required task parameter '%s:%s' is not bound",
+                         task.name, param.name)
+                end
+            end
+        end
+    end
+
+    do
+        local task = self.tasks[self.target]
+        mkdircd(self.ctx.workdir)
+        task:run(self.ctx)
+    end
+end
+
+function TaskSchedule:show()
+    local tasklist = table.keys(self.tasks)
+    table.sort(tasklist)
+    for _, tname in ipairs(tasklist) do
+        print(tname)
+        local params = table.keys(self.tasks[tname].parameters)
+        table.sort(params)
+        for _, pname in ipairs(params) do
+            local p = self.tasks[tname].parameters[pname]
+            if p.required and not p:bound() then
+                printf("  %s=%s", pname, ansicolor("???", "red"))
+            else
+                local source = not p:bound() and "unset" or p.source
+                printf("  %s=%s (%s)", pname, tostring(p:value()), source)
+            end
+            printf("    %s", p.description)
+        end
+    end
+end
+
+-------------------------------- Task Implementations ----------------
+
+Task{
+    name = "git-checkout",
+    description = "Check out a Git repository",
+    dependencies = {"git"},
+    parameters = GitRepository.task_parameters(),
+    outputs = {
+        path = "string",
+    },
+
+    run = function(self)
+        -- Are we dealing with an external repository?
+        do
+            -- If the URL is a path, treat it as an external repository and
+            -- don't touch it.
+            if self.url:match("^/") then
+                local path = self.url
+                local sb, errstr = _stat.stat(path)
+                if not sb then
+                    errx("Failed to stat %s: %s", path, errstr)
+                end
+                if not _stat.S_ISDIR(sb.mode) then
+                    errx("Path %s is not a directory", path)
+                end
+                if self.branch then
+                    local branch = GitRepository.checked_out_branch(path)
+                    if branch ~= self.branch then
+                        errx("Repository %s is on branch %s, not %s",
+                             path, branch, self.branch)
+                    end
+                end
+                self.path = self.url
+                return
+            end
+        end
+
+        local path = pwd() .. "/src"
+        GitRepository.clone_or_update(path, self)
+        self.path = path
+    end
+}
+
+Task{"git-checkout",
+    name = "freebsd-src",
+    description = "Check out the FreeBSD source tree",
+    parameters = {
+        branch = {
+            default = "main"
+        },
+        url = {
+            default = "anongit@git.freebsd.org:src.git"
+        },
+    },
+    outputs = {
+        -- The value of the src tree's __FreeBSD_version.
+        FreeBSD_version = "string",
+    },
+
+    run = function (self, ctx)
+        self:super(ctx)
+
+        -- Get the __FreeBSD_version value from sys/param.h.
+        do
+            local f = io.open_checked(self.path .. "/sys/sys/param.h", "r")
+            local found = false
+            for line in f:lines() do
+                local version = line:match("#define%s+__FreeBSD_version%s+(%d+)")
+                if version then
+                    self.FreeBSD_version = version
+                    found = true
+                    break
+                end
+            end
+            if not found then
+                errx("Failed to find __FreeBSD_version in %s", self.path)
+            end
+        end
+    end,
+}
+
+Task{"git-checkout",
+    name = "freebsd-pkg-src",
+    description = "Check out the FreeBSD pkg source tree",
+    parameters = {
+        branch = {
+            default = "main"
+        },
+        url = {
+            default = "https://github.com/freebsd/pkg"
+        },
+    }
+}
+
+Task{
+    name = "freebsd-pkg-build",
+    description = "Build pkg and run tests",
+    dependencies = {"kyua"},
+    inputs = {
+        src = "freebsd-pkg-src",
+    },
+    parameters = {
+        tests = {
+            description = "Run tests after building?",
+            default = true,
+        },
+        asan = {
+            description = "Build with AddressSanitizer?",
+            default = false,
+        },
+        ubsan = {
+            description = "Build with UndefinedBehaviorSanitizer?",
+            default = false,
+        },
+    },
+    outputs = {
+        -- A path to the kyua database containing test run results.
+        test_results = "string",
+    },
+
+    run = function(self, ctx)
+        self.src = self.src:run(ctx)
+
+        local configure_args = {}
+        if self.asan then
+            table.insert(configure_args, "--with-asan")
+        end
+        if self.ubsan then
+            table.insert(configure_args, "--with-ubsan")
+        end
+
+        local cwd = pwd()
+        cd(self.src.path)
+        exec("./configure", table.unpack(configure_args))
+        exec("make", "all", "-j", ctx.maxjobs)
+        if self.tests then
+            local dbpath = cwd .. "/results.db"
+            exec("kyua", "test", "-k", "tests/Kyuafile", "-r", dbpath)
+            self.test_results = dbpath
+        end
+    end
+}
+
+Task{
+    name = "freebsd-src-build",
+    description = "Run one or more 'make' commands in a FreeBSD src checkout",
+    parameters = {
+        clean = {
+            description = "Clean the build directory before building",
+            default = false,
+        },
+        kernel_config = {
+            description = "The kernel configuration file to use for buildkernel",
+            type = "string",
+        },
+        machine = {
+            description = "The target platform , e.g., amd64 or arm64/aarch64",
+            default = host_machine(),
+            type = "string",
+        },
+        make_arguments = {
+            description = "Arguments to pass to make(1)",
+            type = "string",
+        },
+        make_targets = {
+            description = "The make(1) target(s) to build, e.g., buildworld",
+            default = "",
+        },
+        toolchain = {
+            description = "The toolchain to use for the build",
+            type = "string",
+        },
+    },
+    inputs = {
+        src = "freebsd-src",
+    },
+    outputs = {
+        -- A slash-separated pair of strings naming the target architecture.
+        machine_tuple = "string",
+        -- The mtree file describing any installed files.
+        metalog = "table", -- MTree object
+        -- A path to a directory containing compiled outputs.
+        objdir = "string",
+        -- A path to a staged rootless installation of the build.
+        stagedir = "string",
+    },
+
+    run = function(self, ctx)
+        self.src = self.src:run(ctx)
+
+        -- See if the user specified a valid target platform.
+        local machine, machine_arch
+        do
+            machine, machine_arch = self.machine:match("^(%w+)/(%w+)$")
+            if not machine then
+                machine = self.machine
+                machine_arch = machine
+            end
+
+            local found = false
+            local output = runcmd("make", "-C", self.src.path, "targets")
+            for target in output:gmatch("(%w+/%w+)%s*\n") do
+                if target == machine .. "/" .. machine_arch then
+                    found = true
+                    break
+                end
+            end
+            if not found then
+                errx("Machine target %s/%s is not supported", machine, machine_arch)
+            end
+            self.machine_tuple = machine .. "/" .. machine_arch
+        end
+
+        -- Set up the object directory for the build.  It may be useful to use
+        -- the default objdir instead, but that makes cleaning more
+        -- complicated.
+        self.objdir = pwd() .. "/obj." .. machine .. "." .. machine_arch
+        mkdir(self.objdir)
+
+        -- Create a staging directory for install targets, one per machine
+        -- target.
+        self.stagedir = pwd() .. "/stage." .. machine .. "." .. machine_arch
+        mkdir(self.stagedir)
+
+        -- Set up the build arguments and environment, then run make(1).  We
+        -- might have no make(1) targets to run, in which case there's nothing
+        -- to do.
+        do
+            local metalog = self.stagedir .. "/METALOG.mtree"
+
+            for make_target in self.make_targets:gmatch("%S+") do
+                -- Build up command-line arguments...
+                local args = {
+                    "-ss",
+                    "-j", ctx.maxjobs,
+                    "-DNO_ROOT",
+                    "DESTDIR=" .. self.stagedir,
+                    "METALOG=" .. metalog,
+                }
+                if not self.clean then
+                    table.insert(args, "WITHOUT_CLEAN=")
+                end
+                table.insert(args, "TARGET=" .. machine)
+                if machine_arch then
+                    table.insert(args, "TARGET_ARCH=" .. machine_arch)
+                end
+                if self.kernel_config then
+                    table.insert(args, "KERNCONF=" .. self.kernel_config)
+                end
+                if self.make_arguments then
+                    for arg in self.make_arguments:gmatch("%S+") do
+                        table.insert(args, arg)
+                    end
+                end
+                if self.toolchain then
+                    table.insert(args, "CROSS_TOOLCHAIN=" .. self.toolchain)
+                end
+                -- ... and add the make(1) target...
+                table.insert(args, make_target)
+                -- ... and finally customize the current environment.
+                local env = environ()
+                table.insert(env, "MAKEOBJDIRPREFIX=" .. self.objdir)
+                table.insert(env, "SRCCONF=/dev/null")
+                table.insert(env, "__MAKE_CONF=/dev/null")
+                table.insert(args, env)
+                exec("make", "-C", self.src.path, table.unpack(args))
+            end
+
+            -- Provide the output mtree for any installation targets.
+            self.metalog = MTree{
+                -- This is not quite right since the user might conceivably
+                -- override our name, but hopefully they have no good reason to do
+                -- that.
+                src = metalog,
+                root = self.stagedir,
+                defaults = {
+                    uname = "root",
+                    gname = "wheel",
+                },
+            }
+        end
+    end
+}
+
+Task{"git-checkout",
+    name = "syzkaller-src",
+    description = "Check out the syzkaller source tree",
+    parameters = {
+        branch = {
+            default = "master"
+        },
+        url = {
+            default = "https://github.com/google/syzkaller"
+        },
+    },
+}
+
+Task{
+    name = "syzkaller-build",
+    description = "Build syzkaller",
+    dependencies = {"bash", "gmake", "go"},
+    inputs = {
+        src = "syzkaller-src",
+    },
+    parameters = {
+        regen_syscalls = {
+            description = "Regenerate syscall descriptions from system headers?",
+            default = false,
+        },
+        test = {
+            description = "Run tests after building?",
+            default = false,
+        },
+    },
+    outputs = {
+        -- A path to a directory containing compiled executables.
+        bindir = "string",
+    },
+
+    run = function(self, ctx)
+        self.src = self.src:run(ctx)
+
+        -- Build the syzkaller executables.
+        do
+            local env = environ()
+            table.insert(env, "GOMAXPROCS=" .. ctx.maxjobs)
+
+            -- The syzkaller build consumes huge amounts of memory, limit
+            -- parallelism further to minimize sadness.  Despite the name this
+            -- just limits the number of parallel compiler instances, not the
+            -- number of cores used.
+            exec("gmake", "-C", self.src.path, "NCORES=1", env)
+            if self.test then
+                exec("gmake", "-C", self.src.path, "test", env)
+            end
+        end
+
+        local bindir = pwd() .. "/bin"
+        exec("rm", "-rf", bindir)
+        exec("cp", "-R", self.src.path .. "/bin", bindir)
+        self.bindir = bindir
+    end
+}
+
+Task{
+    name = "syzkaller-freebsd-fuzz",
+    description = "Run syzkaller against a FreeBSD target",
+    long_description = [[
+This task builds a VM image containing FreeBSD, builds syzkaller, and fuzzes
+the FreeBSD image.  Once everything is built, this is mostly a matter of running
+syz-manager, which knows how to boot VMs, install the fuzzer, detect crashes, and
+so on.
+
+The task will run syz-manager in the foreground.  syz-manager also provides a
+web dashboard which gives info about crashes and fuzzer state.  The
+"dashboard_addr" parameter controls where the dashboard listens.
+
+The task lets you choose between bhyve and QEMU as the hypervisor for fuzzing
+VMs.  QEMU is simpler to configure, doesn't require root privileges, and enables
+cross-platform fuzzing (e.g., riscv on amd64), but is of course slower.  The
+overhead of emulation is exacerbated by the use of sanitizers in the guest.
+
+bhyve is more efficient but requires privileges.  Because it lacks snapshot
+support, it relies on the use of ZFS clones to snapshot VM images; the ZFS
+filesystem used for this purpose must be created in advance.
+
+When troubleshooting, set the "debug" parameter to true to run syz-manager in
+debug mode.
+]],
+    -- Need a way to check the pkg database.
+    --dependencies = {"libslirp"},
+
+    inputs = {
+        syzkaller_build = "syzkaller-build",
+        freebsd_src = "freebsd-src",
+        freebsd_build = {"freebsd-src-build",
+            kernel_config = "SYZKALLER",
+        },
+        vm_image = "freebsd-src-syzkaller-vm-image",
+    },
+    parameters = {
+        bridge_interface = {
+            description = "The network interface used to bridge VMs",
+            default = "syz-bridge",
+        },
+        dashboard_addr = {
+            description = "The address on which the dashboard should listen for HTTP",
+            default = "0.0.0.0:8080",
+        },
+        debug = {
+            description = "Run syz-manager in debug mode?",
+            default = false,
+        },
+        hypervisor = {
+            description = "The hypervisor to use for fuzzing",
+            default = "qemu",
+            valid = {"bhyve", "qemu"},
+        },
+        parent_kernel_config = {
+            description = "The parent kernel configuration to use",
+            default = "GENERIC",
+        },
+        target_architecture = {
+            description = "The target architecture for the VM",
+            default = "amd64",
+            valid = {"amd64", "arm64", "riscv"},
+        },
+        vm_count = {
+            description = "The number of VMs to run",
+            default = 1,
+        },
+        vm_ncpu = {
+            description = "The number of CPUs to allocate to each VM",
+            default = 2,
+        },
+        vm_memory = {
+            description = "The amount of memory to allocate to each VM, in MB",
+            default = 2048,
+        },
+        zfs_dataset = {
+            description = "The mounted ZFS dataset to use, required by bhyve",
+            type = "string",
+        },
+    },
+
+    run = function(self, ctx)
+        -- Do some parameter validation.
+        do
+            if self.vm_ncpu * self.vm_count > ctx.maxjobs then
+                errx("Insufficient parallelism to run %d VMs with %d CPUs each",
+                     self.vm_count, self.vm_ncpu)
+            end
+
+            if self.hypervisor == "bhyve" then
+                if not self.zfs_dataset then
+                    errx("bhyve requires a ZFS dataset to store VM images, " ..
+                         "set syzkaller-freebsd-fuzz:zfs_dataset")
+                end
+                local mountpoint = zfs_get(self.zfs_dataset, "mountpoint")
+                if mountpoint == "none" then
+                    errx("ZFS dataset %s is not mounted", self.zfs_dataset)
+                end
+
+                -- bhyve doesn't perform emulation, so the target arch must
+                -- match the host.
+                local valid_hosts = {
+                    amd64 = {"amd64/amd64"},
+                    arm64 = {"arm64/aarch64"},
+                    riscv = {"riscv/riscv64"},
+                }
+                local found = false
+                for _, v in ipairs(valid_hosts[self.target_architecture]) do
+                    if v == host_machine() then
+                        found = true
+                        break
+                    end
+                end
+                if not found then
+                    errx("bhyve cannot boot %s kernels on %s",
+                         self.target_architecture, host_machine())
+                end
+
+                -- The bhyve backend wants a memory unit.
+                self.vm_memory = "\"" .. self.vm_memory .. "M\""
+            end
+        end
+
+        self.syzkaller_build = self.syzkaller_build:run(ctx)
+
+        -- Set up the kernel configuration file needed to build a kernel with
+        -- code coverage tracking.
+        -- XXX-MJ this should be done in the vm_image task, but we need to
+        -- be able to set the build target machine from target_architecture.
+        do
+            self.freebsd_src = self.freebsd_src:run(ctx)
+            local confpath = sprintf("%s/sys/%s/conf/SYZKALLER",
+                                     self.freebsd_src.path,
+                                     self.target_architecture)
+            writefile(confpath, ([[
+include %s
+ident SYZKALLER
+
+options 	COVERAGE
+options 	KCOV
+]]):format(self.parent_kernel_config))
+        end
+
+        -- Build the VM image that we'll be fuzzing.
+        self.vm_image = self.vm_image:run(ctx)
+
+        -- Do some setup required for bhyve.
+        local hypervisor_args, image_path = "", ""
+        do
+            if self.hypervisor ~= "bhyve" then
+                -- -enable-kvm is hard-coded in the QEMU parameters for FreeBSD
+                -- targets, so we have to do this fragile thing to remove it.
+                hypervisor_args = "\"qemu_args\": \"\","
+                image_path = self.vm_image.image
+                goto skip_bhyve_setup
+            end
+
+            hypervisor_args = "\"dataset\": \"" .. self.zfs_dataset .. "\","
+
+            local mountpoint = zfs_get(self.zfs_dataset, "mountpoint")
+            image_path = mountpoint .. "/syzkaller.img"
+            rootexec("cp", "-f", self.vm_image.image, image_path)
+
+            ::skip_bhyve_setup::
+        end
+
+        -- Build up the syz-manager configuration file and start running.
+        do
+            local syzconf = pwd() .. "/syz-manager.conf"
+            local workdir = pwd() .. "/workdir"
+            mkdir(workdir)
+            writefile(syzconf, substitute([[
+{
+    "target": "freebsd/$arch",
+    "workdir": "$workdir",
+    "http": "$addr",
+    "type": "$hypervisor",
+    "syzkaller": "$syzkaller_path",
+    "image": "$image_path",
+    "kernel_src": "$kernel_src",
+    "kernel_obj": "$kernel_obj",
+    "ssh_user": "root",
+    "sshkey": "$sshkey",
+    "procs": 2,
+    "vm": {
+        $hypervisor_args
+        "cpu": $vm_ncpu,
+        "mem": $vm_memory,
+        "count": $vm_count
+    }
+}
+]], {
+    addr = self.dashboard_addr,
+    arch = self.target_architecture,
+    hypervisor = self.hypervisor,
+    hypervisor_args = hypervisor_args,
+    image_path = image_path,
+    kernel_src = self.freebsd_src.path,
+    kernel_obj = self.freebsd_build.objdir,
+    sshkey = self.vm_image.ssh_key_directory .. "/id_ed25519_root",
+    syzkaller_path = self.syzkaller_build.bindir .. "/..",
+    workdir = workdir,
+    vm_count = self.vm_count,
+    vm_memory = self.vm_memory,
+    vm_ncpu = self.vm_ncpu,
+}))
+
+            local syz_manager_args = {
+                self.syzkaller_build.bindir .. "/syz-manager",
+                "-config", syzconf,
+            }
+            if self.debug then
+                table.insert(syz_manager_args, "-debug")
+            end
+
+            if self.hypervisor == "qemu" then
+                exec(table.unpack(syz_manager_args))
+            else
+                rootexec(table.unpack(syz_manager_args))
+            end
+        end
+    end,
+}
+
+Task{
+    name = "freebsd-src-vm-image",
+    description = "Build a VM image containing FreeBSD",
+    inputs = {
+        src = "freebsd-src",
+        build = {"freebsd-src-build",
+            make_targets = "buildworld buildkernel installworld distribution installkernel",
+        },
+    },
+    outputs = {
+        image = "string",
+        ssh_key_directory = "string",
+    },
+    parameters = {
+        filesystem = {
+            description = "The filesystem to use for the VM",
+            default = "ufs",
+            valid = {"ufs", "zfs"},
+        },
+        hostname = {
+            description = "The hostname for the VM",
+            default = "freebsd",
+        },
+        kld_list = {
+            description = "A list of kernel modules to load upon boot via rc.conf",
+            default = "",
+        },
+        image_size = {
+            description = "The size of the VM image in bytes",
+            default = "10g",
+        },
+        packages = {
+            description = "A list of packages to install on the VM upon first boot",
+            default = "",
+        },
+        ssh_users = {
+            description = "A list of users to create on the VM",
+            valid = {"", "root"},  -- No support for adding users right now.
+            default = "",
+        },
+        swap_size = {
+            description = "The size of the swap partition",
+            default = "2G",
+        },
+    },
+
+    run = function(self, ctx)
+        self.build = self.build:run(ctx)
+
+        local mtree = self.build.metalog
+        local stagedir = self.build.stagedir
+
+        -- Create ssh keys for the VM.
+        do
+            local keydir = pwd() .. "/ssh-keys"
+            mkdir("ssh-keys")
+            for user in self.ssh_users:gmatch("%S+") do
+                local keyfile = keydir .. "/id_ed25519_" .. user
+                unlink(keyfile)
+                exec("ssh-keygen", "-t", "ed25519", "-N", "", "-f", keyfile)
+
+                local dstdir
+                if user == "root" then
+                    dstdir = "./root/.ssh"
+                else
+                    dstdir = "./home/" .. user .. "/.ssh"
+                end
+                local dst = dstdir .. "/authorized_keys"
+                mkdir(stagedir .. "/" .. dstdir, octal("0700"))
+                exec("cp", "-f", keyfile .. ".pub", stagedir .. "/" .. dst)
+                mtree:add(dstdir)
+                mtree:add(dst)
+
+                if user == "root" then
+                    local f = io.open_checked(stagedir .. "/etc/ssh/sshd_config", "a")
+                    f:write("PermitRootLogin without-password\n")
+                    f:close()
+                end
+            end
+            self.ssh_key_directory = keydir
+        end
+
+        -- Populate some configuration files to our liking, and create
+        -- /firstboot.
+        do
+            local function conffile(path, ...)
+                assert(path:match("^/"))
+                local contents = ""
+                for _, line in ipairs({...}) do
+                    if line ~= "" then
+                        contents = contents .. line .. "\n"
+                    end
+                end
+                writefile(stagedir .. path, contents)
+                mtree:add("." .. path)
+            end
+
+            local klds = {}
+            for kld in self.kld_list:gmatch("%S+") do
+                table.insert(klds, "kld_list=\"${kld_list} " .. kld .. "\"")
+            end
+
+            conffile("/boot/loader.conf",
+                "autoboot_delay=1",
+                "console=comconsole",
+                self.filesystem == "zfs" and "zfs_load=YES" or "")
+            conffile("/etc/rc.conf",
+                "hostname=" .. self.hostname,
+                "ifconfig_vtnet0=SYNCDHCP", -- XXX-MJ interface name is hard-coded
+                "ifconfig_em0=SYNCDHCP",    -- XXX-MJ interface name is hard-coded
+                "defaultroute_delay=2",
+                "growfs_enable=YES",
+                "sshd_enable=YES",
+                self.filesystem == "zfs" and "zfs_enable=YES" or "",
+                table.unpack(klds))
+            conffile("/etc/fstab",
+                self.filesystem == "ufs" and "/dev/gpt/rootfs / ufs rw 1 1" or "",
+                "/dev/gpt/swap none swap sw 0 0")
+            conffile("/firstboot")
+        end
+
+        -- Create a local pkg repository.  The idea here is to fetch all of the
+        -- requested packages into /root/pkg in the image, create a local
+        -- repository out of them, and then ensure that those packages get
+        -- installed automatically upon first boot.
+        do
+            local pkgabi = sprintf("FreeBSD:%s:%s",
+                                   self.src.FreeBSD_version:sub(1, 2),
+                                   self.build.machine_tuple:match("^%w+/(%w+)"))
+
+            local pkgdir = stagedir .. "/tmp/pkg"
+            mkdir(pkgdir)
+            writefile(pkgdir .. "/repo.conf", substitute([[
+FreeBSD: {
+    url: "pkg+http://pkg.FreeBSD.org/$ABI/latest",
+    mirror_type: "srv",
+    signature_type: "fingerprints",
+    fingerprints: "/usr/share/keys/pkg",
+    enabled: yes
+}
+]], {
+    ABI = pkgabi,
+}))
+
+            local pkgs = {}
+            for pkg in self.packages:gmatch("%S+") do
+                table.insert(pkgs, pkg)
+            end
+            if #pkgs == 0 then
+                goto pkgdone
+            end
+
+            -- Run a pkg command in the staging directory.
+            local function pkgcmd(...)
+                local oldcwd = cd(stagedir)
+                local pkgcmd_prefix = {
+                    "pkg",
+                    "-o", "ASSUME_ALWAYS_YES=true",
+                    "-o", "INSTALL_AS_USER=yes",
+                    "-o", "ABI=" .. pkgabi,
+                    "-o", "PKG_CACHEDIR=./var/cache/pkg",
+                    "-o", "REPOS_DIR=./tmp/pkg",
+                    "-o", "PKG_DBDIR=./var/db/pkg",
+                    "-o", "IGNORE_OSVERSION=yes",
+                }
+                local t = table.deepcopy(pkgcmd_prefix)
+                for _, arg in ipairs({...}) do
+                    table.insert(t, arg)
+                end
+                exec(table.unpack(t))
+                cd(oldcwd)
+            end
+
+            pkgcmd("update")
+            pkgcmd("fetch", "--dependencies", "-o", "./root/bootstrap", "pkg")
+            pkgcmd("fetch", "--dependencies", "-o", "./root/pkg", table.unpack(pkgs))
+            pkgcmd("repo", "./root/pkg")
+            mtree:stage("pkg.mtree", stagedir, "./root/pkg")
+            mtree:stage("pkg-bootstrap.mtree", stagedir, "./root/bootstrap")
+
+            writefile(stagedir .. "/etc/pkg/local.conf", [[
+local: {
+    url: "file:///root/pkg"
+}
+]])
+            mtree:add("./etc/pkg/local.conf")
+
+            writefile(stagedir .. "/etc/rc.local", [[
+if [ -f /firstboot ]; then
+    export PATH=${PATH}:/usr/local/sbin:/usr/local/bin
+    echo ""
+    echo "bricoler: Running first-boot setup"
+    # Older version of pkg(7) don't use basename().
+    cd /root/bootstrap/All
+    # Install pkg(8).
+    pkg add *
+    # Install all the packages we fetched above.
+    pkg install -y -r local -g '*'
+    if [ $? -ne 0 ]; then
+        # There is some pkg bug that requires us to run this twice.
+        # Otherwise it'll fail when trying to update the upstream repo.
+        pkg install -y -r local -g '*'
+    fi
+fi
+]])
+            mtree:add("./etc/rc.local")
+
+            ::pkgdone::
+        end
+
+        -- Create the EFI system partition, if applicable.
+        local has_efi = false
+        local machine, machine_arch = self.build.machine_tuple:match("^(%w+)/(%w+)")
+        do
+            if machine == "i386" or machine == "powerpc" then
+                goto noefi
+            end
+
+            local src = stagedir .. "/boot/loader.efi"
+            local targetdir = pwd() .. "/efi/EFI/BOOT"
+            makepath(targetdir)
+
+            local efibins = {
+                ["amd64"] = "bootx64.efi",
+                ["arm64"] = "bootaa64.efi",
+                ["riscv"] = "bootriscv64.efi",
+                ["arm"] = "bootarm.efi",
+            }
+            local efibin = efibins[machine]
+            if not efibin then
+                errx("No EFI binary for machine tuple %s", machine)
+            end
+            exec("cp", "-f", src, targetdir .. "/" .. efibin)
+            exec("makefs", "-t", "msdos", "-o", "fat_type=16",
+                 "-o", "sectors_per_cluster=1",
+                 "-o", "volume_label=EFI",
+                 "-s", "4m", pwd() .. "/esp.fs", pwd() .. "/efi")
+            has_efi = true
+
+            ::noefi::
+        end
+
+        -- Finalize the metalog and write it out, then create the root
+        -- filesystem image.
+        local fs_image = pwd() .. "/image.fs"
+        do
+            -- Remove the size key from the mtree entries, as they may be
+            -- incorrect after file modification.
+            mtree:filter(function (entry)
+                entry.size = nil
+                return entry
+            end)
+            local metalog = pwd() .. "/METALOG.mtree"
+            mtree:write(metalog)
+
+            local makefs_cmd = {"makefs"}
+            if self.filesystem == "ufs" then
+                table.append(makefs_cmd,
+                    "-t", "ffs",
+                    "-Z",
+                    "-o", "softupdates=1",
+                    "-o", "version=2")
+            else
+                table.append(makefs_cmd,
+                    "-t", "zfs",
+                    "-o", "poolname=zroot",
+                    "-o", "bootfs=zroot")
+            end
+
+            table.append(makefs_cmd,
+                "-DD",
+                "-s", self.image_size,
+                fs_image,
+                metalog)
+            local oldcwd = cd(stagedir)
+            exec(table.unpack(makefs_cmd))
+            cd(oldcwd)
+        end
+
+        -- Now put everything together and create the disk image.
+        do
+            self.image = pwd() .. "/image." .. machine .. "." .. machine_arch .. ".raw"
+            local mkimg_cmd = {
+                "mkimg",
+                "-f", "raw",
+                "-S", "512",
+                "-o", self.image,
+            }
+
+            local bootdir = self.build.stagedir .. "/boot"
+            if machine == "powerpc" then
+                table.append(mkimg_cmd,
+                    "-s", "mbr",
+                    "-a", "1",
+                    "-p", "prepboot:=" .. bootdir .. "/boot1.elf",
+                    "-p", "freebsd:=" .. self.image)
+            else
+                table.append(mkimg_cmd, "-s", "gpt")
+                if machine == "amd64" or machine == "i386" then
+                    table.append(mkimg_cmd,
+                        "-b", bootdir .. "/pmbr",
+                        "-p", "freebsd-boot/bootfs:=" .. bootdir .. "/gptboot")
+                end
+                if has_efi then
+                    table.append(mkimg_cmd, "-p", "efi:=" .. pwd() .. "/esp.fs")
+                end
+                local parttype = self.filesystem == "ufs" and "freebsd-ufs" or "freebsd-zfs"
+                table.append(mkimg_cmd,
+                    "-p", "freebsd-swap/swap::" .. self.swap_size,
+                    "-p", parttype .. "/rootfs:=" .. fs_image)
+            end
+
+            exec(table.unpack(mkimg_cmd))
+        end
+    end,
+}
+
+Task{"freebsd-src-vm-image",
+    name = "freebsd-src-syzkaller-vm-image",
+    description = "Build a FreeBSD VM image suitable for syzkaller",
+    parameters = {
+        ssh_users = {
+            -- syzkaller uses ssh to install the fuzzer into VM instances.
+            default = "root",
+        },
+    },
+}
+
+Task{
+    name = "freebsd-vm-run",
+    description = "Boot a VM running FreeBSD",
+    inputs = {
+        build = "freebsd-src-build",
+        vm_image = "freebsd-src-vm-image",
+    },
+    parameters = VMRun.task_parameters(),
+    outputs = {
+        -- The running VM instance.
+        VM = "table",
+    },
+
+    run = function(self, ctx)
+        self.vm_image = self.vm_image:run(ctx)
+
+        local VMparams = {
+            image = self.vm_image.image,
+            machine_tuple = self.build.machine_tuple,
+        }
+        for k, _ in pairs(VMRun.task_parameters()) do
+            if self[k] then
+                VMparams[k] = self[k]
+            end
+        end
+        VMparams.gdb_addr = unused_tcp_port("127.0.0.1")
+        VMparams.ssh_addr = unused_tcp_port("127.0.0.1")
+        local VM = VMRun(VMparams)
+
+        writefile("./gdb-addr", VM.gdb_addr)
+        exec("rm", "-f", "./sysroot")
+        exec("ln", "-sf", self.build.stagedir, "./sysroot")
+        -- Write out the SSH address for the VM and copy keys from the input
+        -- task.  This is ugly but it makes it easier to implement the "ssh"
+        -- action.
+        writefile("./ssh-addr", VM.ssh_addr)
+        exec("rm", "-rf", "./ssh-keys")
+        exec("cp", "-R", self.vm_image.ssh_key_directory, "./ssh-keys")
+
+        VM:boot()
+        -- The VM's booted to a login prompt.  Hand it off to the inheriting
+        -- task.
+        self.VM = VM
+    end,
+
+    actions = {
+        -- Attach gdb to the hypvervisor's debugger stub.
+        gdb = function()
+            local gdb = which("gdb")
+            if not gdb then
+                errx("gdb is not in PATH, make sure it is installed")
+            end
+
+            local f = io.open_checked("./gdb-addr", "r")
+            local val = f:read("*l")
+            f:close()
+
+            local addr, port = val:match("^(.*):(%d+)$")
+            exec(gdb,
+                 "-ex", "set sysroot ./sysroot",
+                 "-ex", "file ./sysroot/boot/kernel/kernel",
+                 "-ex", "target remote " .. addr .. ":" .. port)
+        end,
+
+        -- SSH into the VM.
+        ssh = function()
+            local f = io.open_checked("./ssh-addr", "r")
+            local val = f:read("*l")
+            f:close()
+
+            local addr, port = val:match("^(.*):(%d+)$")
+            exec("ssh",
+                 "-o", "StrictHostKeyChecking=no",
+                 "-o", "UserKnownHostsFile=/dev/null",
+                 "-i", "./ssh-keys/id_ed25519_root",
+                 "-p", port,
+                 "root@" .. addr)
+        end,
+    }
+}
+
+Task{"freebsd-src-vm-image",
+    name = "freebsd-src-regression-suite-vm-image",
+    description = "Build a VM image set up to run the FreeBSD regression test suite",
+    inputs = {
+        build = {"freebsd-src-build",
+            -- Speed up the build a bit by removing expensive things we don't
+            -- need.
+            make_arguments = "WITHOUT_CLANG= WITHOUT_LLD= WITHOUT_LLDB= " ..
+                             "WITHOUT_LIB32=",
+        },
+    },
+    parameters = {
+        kld_list = {
+            default = "carp dummynet if_ovpn if_stf ipdivert ipsec " ..
+                      "mac_bsdextended mqueuefs pf pflog pfsync sctp",
+        },
+        image_size = {
+            default = "30g"
+        },
+        packages = {
+            default = "coreutils python py39-pytest py39-scapy perl5 jq ksh93 " ..
+                      "llvm gtar isc-dhcp44-server sudo"
+        },
+        ssh_users = {
+            -- It's useful to be able to log in to have a look around.
+            default = "root",
+        },
+    },
+
+    run = function(self, ctx)
+        self.build = self.build:run(ctx)
+        local stagedir = self.build.stagedir
+        local mtree = self.build.metalog
+
+        writefile(stagedir .. "/etc/sysctl.conf", [[
+kern.ipc.tls.enable=1
+vfs.aio.enable_unsafe=1
+kern.crypto.allow_soft=1
+]])
+        mtree:add("./etc/sysctl.conf")
+
+        self:super(ctx)
+    end,
+}
+
+Task{"freebsd-vm-run",
+    name = "freebsd-src-regression-suite-run",
+    description = "Run the FreeBSD regression test suite inside a VM",
+    long_description = [[
+This task will run the FreeBSD regression test suite in a VM.  By default,
+tests are run in parallel where possible using kyua's parallelism option.
+
+This and the freebsd-src-regression-suite-vm-image task care of various finicky
+details to make sure that as many tests as possible can run.  Specifically,
+they set various non-default kyua options, install required third-party
+packages, and ensure that required kernel modules are loaded.
+
+By default the entire test suite is run.  After kyua completes, it leaves behind
+a SQLite database, /root/kyua.db.  This database is used to generate a report of
+the test suite run.  The report and the database are copied back to the host, and
+the VM is shut down.
+]],
+    inputs = {
+        vm_image = "freebsd-src-regression-suite-vm-image",
+    },
+    parameters = {
+        interactive = {
+            -- Overriding this prevents the test from running automatically,
+            -- but that can nonetheless be useful when debugging.
+            default = false
+        },
+        ncpus = {
+            default = 4
+        },
+        memory = {
+            default = 8 * 1024
+        },
+        tests = {
+            description = "A list of tests to run, relative to /usr/tests",
+            type = "string",
+            default = "",
+        },
+    },
+
+    run = function(self, ctx)
+        -- Add some extra disks for the ZFS tests.
+        exec("truncate", "-s", "50g", "./disk1")
+        exec("truncate", "-s", "50g", "./disk2")
+        exec("truncate", "-s", "50g", "./disk3")
+        exec("truncate", "-s", "50g", "./disk4")
+        self.disk_list = "./disk1 ./disk2 ./disk3 ./disk4"
+
+        self:super(ctx)
+
+        -- Run the test suite and copy the results back to the host.
+        do
+            local kyuavars = {
+                "-v", "parallelism=" .. self.ncpus,
+                "-v", "test_suites.FreeBSD.allow_sysctl_side_effects=1",
+                "-v", "test_suites.FreeBSD.disks=\"/dev/vtbd1 /dev/vtbd2 /dev/vtbd3 /dev/vtbd4\"",
+            }
+            local kyuacmd = "kyua " ..  table.concat(kyuavars, " ") .. " " ..
+                            "test " .. "-k /usr/tests/Kyuafile -r /root/kyua.db " ..
+                            self.tests
+            self.VM:consrun(kyuacmd, 12 * 60 * 60)
+            local reportcmd = "kyua report --verbose " ..
+                              "--results-filter passed,skipped,xfail,broken,failed " ..
+                              "--output=/root/kyua_report.txt " ..
+                              "-r /root/kyua.db"
+            self.VM:consrun(reportcmd, 60)
+
+            local sshkey = self.vm_image.ssh_key_directory .. "/id_ed25519_root"
+            self.VM:scpfrom("root", sshkey, "/root/kyua.db", "./kyua.db")
+            self.VM:scpfrom("root", sshkey, "/root/kyua_report.txt", "./kyua_report.txt")
+        end
+    end,
+
+    actions = {
+        report = function()
+            local f = io.open_checked("./kyua_report.txt", "r")
+            for line in f:lines() do
+                print(line)
+            end
+            f:close()
+        end,
+    }
+}
+
+Task{"freebsd-src-vm-image",
+    name = "freebsd-src-stress2-vm-image",
+    description = "Build a VM image containing the stress2 test suite",
+    inputs = {
+        src = "freebsd-src",
+    },
+    parameters = {
+        image_size = {
+            default = "50g"
+        },
+        packages = {
+            -- From misc/1st.sh in stress2.
+            default = "cdrtools e2fsprogs libmill mDNSResponder ruby",
+        },
+        ssh_users = {
+            -- It's useful to be able to log in to have a look around.
+            default = "root",
+        },
+    },
+    outputs = {
+        -- The path, relative to the guest filesystem, of the stress2 test
+        -- suite.
+        stress2_path = "string",
+    },
+
+    run = function (self, ctx)
+        self.src = self.src:run(ctx)
+        self.build = self.build:run(ctx)
+
+        do
+            local src = self.src.path .. "/tools/test/stress2"
+            local dst = self.build.stagedir .. "/stress2"
+            exec("rm", "-rf", dst)
+            exec("cp", "-R", src, dst)
+
+            local mtree = self.build.metalog
+            mtree:filter(function (entry)
+                return not entry.path:match("^/stress2/")
+            end)
+
+            mtree:stage("stress2.mtree", self.build.stagedir, "./stress2")
+            self.stress2_path = "/stress2"
+        end
+
+        self:super(ctx)
+    end,
+}
+
+Task{"freebsd-vm-run",
+    name = "freebsd-src-stress2-run",
+    description = "Run the stress2 test suite inside a VM",
+    long_description = [[
+
+]],
+    parameters = {
+        interactive = {
+            -- Overriding this prevents the test from running automatically,
+            -- but that can nonetheless be useful when debugging.
+            default = false
+        },
+        ncpus = {
+            default = 4
+        },
+        memory = {
+            default = 16 * 1024
+        },
+    },
+    inputs = {
+        vm_image = "freebsd-src-stress2-vm-image",
+    },
+
+    run = function(self, ctx)
+        self:super(ctx)
+
+        -- Build the test suite helper programs.
+        do
+            local buildcmd = sprintf("echo root | make -C %s",
+                                     self.vm_image.stress2_path)
+            self.VM:consrun(buildcmd, 10 * 60)
+        end
+
+        -- We want to have a timeout, but it's not clear yet what's reasonable.
+        -- A full stress2 run can take days, but we need some way to know
+        -- whether it's making progress.  Perhaps there's a watchdog we can use?
+        self.VM:consrun(sprintf("make -C %s test", self.vm_image.stress2_path),
+                        10 * 24 * 60 * 60)
+    end,
+}
+
+Task{"freebsd-vm-run",
+    name = "freebsd-src-dev-vm",
+    description = "Run a VM with a development environment for FreeBSD",
+    inputs = {
+        build = "freebsd-src-build",
+        vm_image = "freebsd-src-vm-image",
+    },
+    parameters = {
+        interactive = {
+            default = true
+        },
+        ncpus = {
+            default = 4
+        },
+        memory = {
+            default = 8 * 1024
+        },
+    },
+}
+
+-------------------------------- Main --------------------------------
+
+if _getuid.geteuid() == 0 then
+    errx("bricoler must not be run as root")
+end
+
+local workdir = os.getenv("BRICOLER_WORKDIR")
+if not workdir or workdir == "" then
+    workdir = os.getenv("HOME") .. "/bricoler"
+end
+
+local Argparse = require 'contrib.argparse'
+local parser = Argparse("bricoler", "Manage and run tasks")
+
+local cmds = {}
+
+-- Run a task.
+cmds.run = parser:command("run")
+                 :description("Run a task")
+cmds.run:argument("task")
+        :args("?") -- No name means, "print the list of available tasks".
+        :description("Task name")
+cmds.run:argument("action")
+        :args("0-1")
+        :description("Optional auxilliary action name")
+cmds.run:option("--workdir")
+        :description("Working directory")
+        :default(workdir)
+cmds.run:option("-j --maxjobs")
+        :description("Maximum number of CPUs to use")
+        :default(tostring(sysctl("kern.smp.cpus")))
+cmds.run:option("-p --param")
+        :description("Set a task parameter")
+        :count("*")
+cmds.run:flag("-s --show")
+        :description("Show the task execution plan")
+
+-- Generate a plain list of tasks, useful for auto-completion.
+cmds.list = parser:command("list")
+                  :description("List available tasks and task parameters")
+cmds.list:argument("task")
+         :args("?")
+         :description("Task name")
+
+local args = parser:parse()
+
+if args.list then
+    if args.task then
+        -- Print the parameters for each task.
+        local ts = TaskSchedule{
+            ctx = {},
+            parameters = {},
+            target = args.task,
+        }
+        local names = table.keys(ts.tasks)
+        table.sort(names)
+
+        for _, t in ipairs(names) do
+            local params = table.keys(tasks[t].parameters)
+            table.sort(params)
+            for _, p in ipairs(params) do
+                print(t .. ":" .. p)
+            end
+        end
+    else
+        -- Print a list of tasks.
+        local keys = table.keys(tasks)
+        table.sort(keys)
+        for _, k in ipairs(keys) do
+            print(k)
+        end
+    end
+elseif args.run then
+    if not args.task then
+        print("Available tasks:")
+        local keys = table.keys(tasks)
+        table.sort(keys)
+        for _, k in ipairs(keys) do
+            print("  " .. k)
+            print("    " .. tasks[k].description)
+        end
+        os.exit(0)
+    end
+
+    local ts = TaskSchedule{
+        ctx = {
+            action = args.action,
+            maxjobs = tonumber(args.maxjobs),
+            workdir = args.workdir,
+        },
+        parameters = args.param,
+        target = args.task,
+    }
+
+    if args.show then
+        ts:show()
+    else
+        ts:run()
+    end
+end

@@ -1,0 +1,5 @@
+{
+  "Lua.runtime.special": {
+    "errx": "error"
+  }
+}

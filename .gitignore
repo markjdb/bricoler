@@ -1,0 +1,4 @@
+*.pico
+*.so
+*.so.debug
+*.so.full
