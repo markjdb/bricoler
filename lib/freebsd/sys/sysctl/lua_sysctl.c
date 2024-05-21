@@ -172,9 +172,9 @@ l_sysctlbyname(lua_State *L)
 }
 
 static const struct luaL_Reg l_sysctltab[] = {
-	{"sysctl", l_sysctl},
-	{"sysctlbyname", l_sysctlbyname},
-	{NULL, NULL},
+	{ "sysctl", l_sysctl },
+	{ "sysctlbyname", l_sysctlbyname },
+	{ NULL, NULL },
 };
 
 int	luaopen_sysctl(lua_State *L);

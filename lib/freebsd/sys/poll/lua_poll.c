@@ -99,7 +99,6 @@ luaopen_poll(lua_State *L)
 {
 	lua_newtable(L);
 	luaL_setfuncs(L, l_polltab, 0);
-
 #define	ADDCONST(c) do {		\
 	lua_pushinteger(L, c);		\
 	lua_setfield(L, -2, #c);	\
@@ -115,6 +114,5 @@ luaopen_poll(lua_State *L)
 	ADDCONST(POLLRDHUP);
 	ADDCONST(POLLNVAL);
 #undef ADDCONST
-
 	return (1);
 }

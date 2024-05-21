@@ -79,9 +79,32 @@ l_pread(lua_State *L)
 	return (1);
 }
 
+static int
+l_write(lua_State *L)
+{
+	const char *buf;
+	ssize_t n;
+	int *fdp;
+
+	fdp = luaL_checkudata(L, 1, FREEBSD_SYS_FD_REGISTRY_KEY);
+	buf = luaL_checklstring(L, 2, &n);
+
+	n = write(*fdp, buf, n);
+	if (n == -1) {
+		lua_pushnil(L);
+		lua_pushstring(L, strerror(errno));
+		lua_pushinteger(L, errno);
+		return (3);
+	}
+
+	lua_pushinteger(L, n);
+	return (1);
+}
+
 static const struct luaL_Reg l_readtab[] = {
 	{ "read", l_read },
 	{ "pread", l_pread },
+	{ "write", l_write },
 	{ NULL, NULL },
 };
 

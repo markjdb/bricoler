@@ -8,6 +8,9 @@ CFLAGS+=	-I/usr/local/include/lua54	\
 WARNS?=		6
 
 SUBDIR=	errno		\
+	getaddrinfo	\
+	libgen		\
+	mktemp		\
 	posix_spawn	\
 	sys		\
 	sysconf		\

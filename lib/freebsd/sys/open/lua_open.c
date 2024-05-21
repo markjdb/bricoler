@@ -15,8 +15,6 @@
 
 #include <lua_freebsd_meta.h>
 
-#include <stdio.h>
-
 static int
 l_close(lua_State *L)
 {
@@ -26,7 +24,6 @@ l_close(lua_State *L)
 	assert(*fdp != -1);
 	error = close(*fdp);
 	if (error == -1) {
-		printf("%s:%d\n", __func__, __LINE__);
 		lua_pushnil(L);
 		lua_pushstring(L, strerror(errno));
 		lua_pushinteger(L, errno);

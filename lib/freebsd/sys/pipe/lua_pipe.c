@@ -6,6 +6,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -47,7 +48,15 @@ l_pipe(lua_State *L)
 static int
 l_pipe2(lua_State *L)
 {
-	return (_l_pipe2(L, luaL_checkinteger(L, 1)));
+	lua_Integer lflags;
+
+	lflags = luaL_checkinteger(L, 1);
+	if (lflags < INT_MIN || lflags > INT_MAX) {
+		lua_pushnil(L);
+		lua_pushstring(L, "argument out of range");
+		return (2);
+	}
+	return (_l_pipe2(L, lflags));
 }
 
 static const struct luaL_Reg l_pipetab[] = {

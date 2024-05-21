@@ -8,6 +8,7 @@ SUBDIR=	access	\
 	pipe	\
 	poll	\
 	read	\
+	socket	\
 	stat	\
 	sysctl	\
 	unlink	\
