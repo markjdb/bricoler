@@ -1,0 +1,9 @@
+
+write "Hello\r"
+match "Hello" {
+	callback = function()
+		write "There!\r"
+	end
+}
+
+match "There"

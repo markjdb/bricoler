@@ -1,0 +1,11 @@
+build
+.*.swp
+*.o
+*.bak
+*.core
+*.debug
+*.full
+*.gz
+.depend*
+orch
+ktrace.out

@@ -1,0 +1,18 @@
+timeout(1)
+
+spawn("cat")
+write "Hello\rWorld\r"
+
+match "Hello\r"
+
+-- This should come with a new buffer, so we shouldn't be able to match anything
+-- from the previous process.
+spawn("cat")
+
+fail(function()
+	exit(0)
+end)
+
+match "World"
+
+exit(1)

@@ -1,0 +1,8 @@
+
+set(EXAMPLES
+	cat.orch
+	nc.orch
+)
+
+install(FILES ${EXAMPLES} DESTINATION
+	${ORCHLUA_EXAMPLESDIR})

@@ -1,0 +1,10 @@
+-- This will timeout since Hello != Biscuits
+
+timeout(1)
+fail(function()
+	exit(0)
+end)
+
+write "Hello\r"
+match "Biscuits"
+exit(1)

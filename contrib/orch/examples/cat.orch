@@ -1,0 +1,34 @@
+-- Executed like `./orch -f cat.orch -- cat` -- this one won't spawn anything
+-- itself, so it must be done on the command line.
+
+-- We get released on first match anyways, so this doesn't need to be called:
+-- release()
+
+write "Send One\r"
+one(function()
+	match "One" {
+		callback = function()
+			write "LOL\r"
+
+			debug "Matched one"
+			match "LOL" {
+				callback = function()
+					debug "lol"
+					write "Foo\r"
+				end
+			}
+			-- Also valid:
+			-- write "Foo"
+			match "Foo" {
+				callback = function()
+					debug "foo matched too"
+				end
+			}
+		end
+	}
+	match "Two" {
+		callback = function()
+		--	debug "Called two"
+		end
+	}
+end)

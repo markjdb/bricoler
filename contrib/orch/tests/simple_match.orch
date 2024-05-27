@@ -1,0 +1,3 @@
+-- What we write to cat(1) should come straight back to us.
+write "Hello\r"
+match "Hello"

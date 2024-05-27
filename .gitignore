@@ -2,3 +2,4 @@
 *.so
 *.so.debug
 *.so.full
+contrib/orch/install

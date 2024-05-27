@@ -1,0 +1,7 @@
+
+spawn("cat")
+
+spawn("cat")
+
+write "Hello\r"
+match "Hello"

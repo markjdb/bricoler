@@ -1,0 +1,14 @@
+#!/usr/bin/env -S orch -f
+
+-- On the same machine, open up `nc -l 9999` and play with it.
+spawn("nc", "localhost", "9999")
+
+write "Hello from the other side\r"
+
+-- Write any response on the listening side (don't forget to hit return), and...
+match "." {
+	callback = function()
+		-- ...we'll shoot a debug message when it comes over.
+		debug("We received a response!")
+	end
+}

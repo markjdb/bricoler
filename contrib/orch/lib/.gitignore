@@ -1,0 +1,4 @@
+!orch/
+*.so
+*.so.*
+*.pico

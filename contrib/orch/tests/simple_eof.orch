@@ -1,0 +1,3 @@
+-- VEOF on an empty line should terminate cat, send us EOF.
+write "^D"
+eof()

@@ -1,0 +1,20 @@
+
+local did_thing = false
+write "Hello\r"
+
+one(function()
+	match "Hello" {
+		callback = function()
+			did_thing = true
+		end
+	}
+	match "There"
+end)
+
+enqueue(function()
+	if did_thing then
+		exit(0)
+	end
+end)
+
+exit(1)

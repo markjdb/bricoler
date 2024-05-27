@@ -1,0 +1,89 @@
+.\"
+.\" Copyright (c) 2024 Kyle Evans <kevans@FreeBSD.org>
+.\"
+.\" SPDX-License-Identifier: BSD-2-Clause
+.\"
+.Dd January 21, 2024
+.Dt ORCH 1
+.Os
+.Sh NAME
+.Nm orch
+.Nd Utility to orchestrate command line tools
+.Sh SYNOPSIS
+.Nm
+.Op Fl f Ar scriptfile
+.Op Ar command Op Ar argument ..
+.Nm
+.Op Fl h
+.Sh DESCRIPTION
+The
+.Nm
+utility allows scripted interactions with other command line tools.
+.Pp
+All uses of
+.Nm
+follow a specific pattern: spawn a command, optionally write to its stdin, check
+for patterns in its stdout.
+The last two steps may be interleaved in interesting ways based on program
+behavior and interaction.
+When
+.Nm
+spawns a command, it sets up a new
+.Xr pts 4
+and disables input echo on it.
+The command is not executed immediately, but instead waits for a release from
+the user script before processing.
+This is done so that the
+.Ar scriptfile
+may queue up some input to the program before it begins execution.
+See
+.Xr orch 5
+for more detail on
+.Nm
+scripts.
+.Pp
+The following options are available:
+.Bl -tag -width indent
+.It Fl f Ar scriptfile
+Uses the named
+.Ar scriptfile
+as the script to execute.
+Specifying
+.Dq -
+directs
+.Nm
+to read the script from stdin, and is the default behavior.
+.It Fl h
+Show a usage statement.
+.El
+.Pp
+If a
+.Ar command
+is specified, then
+.Nm
+will spawn it before executing the specified
+.Ar scriptfile .
+Execution will still be stalled until released, as described above.
+.Sh EXIT STATUS
+The
+.Nm
+utility exits 0 on success, and >0 if an error occurs.
+A
+.Fn match
+block failing is considered an error, unless it's within a
+.Fn one
+block.
+All blocks in a
+.Fn one
+block must fail to be considered an error.
+.Sh SEE ALSO
+.Xr expect 1 ,
+.Xr pts 4 ,
+.Xr orch 5
+.Sh AUTHORS
+.Nm
+was written by
+.An Kyle Evans Aq Mt kevans@FreeBSD.org
+for the express purpose of testing
+.Xr tty 4
+behavior.

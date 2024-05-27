@@ -1,0 +1,15 @@
+timeout(1)
+write "Fish Dog\r"
+
+-- We chop 'fish' off of the buffer, then we should still have ' Dog' available
+-- for matching.
+match "Fish"
+
+fail(function()
+	exit(0)
+end)
+
+-- So if we try Fish again, it should be gone.
+match "Fish"
+
+exit(1)

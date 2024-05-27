@@ -1,0 +1,9 @@
+timeout(1)
+
+-- Normally a non-match will trigger failure, but here we'll setup a failure
+-- handler to exit successfully for test purposes.
+fail(function()
+	exit(0)
+end)
+
+match "Hello"
