@@ -1,0 +1,20 @@
+Todo:
+- Task for running ZFS test suite, persistent devvm
+- man page
+- Nicer formatting for "-s".
+- Figure out a saner system for importing C functions.
+- Figure out a saner syntax for running subtasks than "self.foo = self.foo:run()" 
+- Implement some kind of lockfile-based mutual exclusion.
+- Add some kind of tmux integration.
+
+Longer-term questions/tasks:
+- Add a timeout to the syzkaller task.
+- mkimg can be made much faster on systems with block cloning, but this
+  requires some work.
+- Want some way to avoid needless work when inputs don't change.
+
+Notes for the talk:
+- Want to demo plain VM booting+ssh/gdb
+- Want to demo stabweek branch
+- Mention future plans
+  - lua-language-server in ports

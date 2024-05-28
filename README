@@ -1,0 +1,7 @@
+== Building ==
+
+This project only runs on FreeBSD for now.
+
+It requires Lua 5.4 and cmake.
+
+To build it, run "make" from the root directory.
