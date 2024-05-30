@@ -1657,6 +1657,10 @@ Task{
             description = "The kernel configuration file to use for buildkernel",
             type = "string",
         },
+        kernel_modules = {
+            description = "A list of kernel modules to build, all are built by default",
+            type = "string",
+        },
         machine = {
             description = "The target platform , e.g., amd64 or arm64/aarch64",
             default = host_machine(),
@@ -1750,6 +1754,9 @@ Task{
                 end
                 if self.kernel_config then
                     table.insert(args, "KERNCONF=" .. self.kernel_config)
+                end
+                if self.kernel_modules then
+                    table.insert(args, "MODULES_OVERRIDE=" .. self.kernel_modules)
                 end
                 if self.make_arguments then
                     for arg in self.make_arguments:gmatch("%S+") do
