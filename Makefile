@@ -3,6 +3,10 @@ all:	lib orch
 lib: .PHONY
 	${MAKE} -C lib/freebsd
 
+install:
+	@echo "No install target is supported, run in-place"
+	@false
+
 ORCHSRC= contrib/orch
 
 orch: .PHONY
