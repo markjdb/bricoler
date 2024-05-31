@@ -1199,24 +1199,30 @@ function Task:_ctor(props)
             errx("Task '%s' parent '%s' does not exist", props.name, self[1])
         end
     end
+
     -- Swizzle the run() implementation.  _run is the function that the task
     -- implements (called "run" in the task definition), and Task:run() is a
     -- wrapper which sets up context.  If the task inherits from another task
     -- and defines its own "run" implementation, it can call the parent's
     -- implementation using "super".
     do
-        local run = props.run
+        local run, super
         if not props.run then
             if parent then
                 run = parent._run
+                super = parent.super
             else
                 errx("Task '%s' has no run() implementation", props.name)
             end
-        elseif parent then
-            self.super = parent._run
+        else
+            run = props.run
+            if parent then
+                super = parent._run
+            end
         end
         self._run = run
         self.run = Task.run
+        self.super = super
     end
 
     -- Normalize input definitions.  They can be of the form
