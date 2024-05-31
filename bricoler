@@ -2641,7 +2641,7 @@ Task{"freebsd-src-vm-image",
     },
     parameters = {
         rc_kld_list = {
-            default = "dtraceall kinst"
+            default = "dtraceall kinst sctp"
         },
         image_size = {
             default = "30g"
