@@ -2628,6 +2628,44 @@ the VM is shut down.
 }
 
 Task{"freebsd-src-vm-image",
+    name = "freebsd-src-dtrace-regression-suite-vm-image",
+    description = "Build a VM image set up to run the DTrace regression test suite",
+    inputs = {
+        build = {"freebsd-src-build",
+            make_arguments = "WITHOUT_TOOLCHAIN= WITH_DTRACE_TESTS=",
+        },
+    },
+    parameters = {
+        kld_list = {
+            default = "dtraceall kinst"
+        },
+        image_size = {
+            default = "30g"
+        },
+        packages = {
+            default = "jq libxml2 llvm nmap pdksh perl5",
+        },
+        ssh_users = {
+            -- It's useful to be able to log in to have a look around.
+            default = "root",
+        },
+    },
+}
+
+Task{"freebsd-src-regression-suite-run",
+    name = "freebsd-src-dtrace-regression-suite-run",
+    description = "Run the DTrace regression test suite inside a VM",
+    inputs = {
+        vm_image = "freebsd-src-dtrace-regression-suite-vm-image",
+    },
+    parameters = {
+        tests = {
+            default = "cddl/usr.sbin/dtrace",
+        },
+    },
+}
+
+Task{"freebsd-src-vm-image",
     name = "freebsd-src-stress2-vm-image",
     description = "Build a VM image containing the stress2 test suite",
     inputs = {
