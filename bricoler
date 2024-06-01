@@ -2647,7 +2647,7 @@ Task{"freebsd-src-vm-image",
             default = "30g"
         },
         packages = {
-            default = "jq libxml2 llvm nmap pdksh perl5",
+            default = "binutils jq libxml2 llvm nmap pdksh perl5",
         },
         ssh_users = {
             -- It's useful to be able to log in to have a look around.
