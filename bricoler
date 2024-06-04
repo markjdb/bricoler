@@ -2505,7 +2505,7 @@ Task{"freebsd-src-vm-image",
     },
     parameters = {
         kld_list = {
-            default = "carp dummynet if_ovpn if_stf ipdivert ipsec " ..
+            default = "carp dummynet if_bridge if_epair if_ovpn if_stf ipdivert ipsec " ..
                       "mac_bsdextended mqueuefs pf pflog pfsync sctp",
         },
         image_size = {
