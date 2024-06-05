@@ -1752,27 +1752,17 @@ Task{
                     "-DNO_ROOT",
                     "DESTDIR=" .. self.stagedir,
                     "METALOG=" .. metalog,
+                    "TARGET=" .. machine,
+                    self.clean and "WITH_CLEAN=" or "WITHOUT_CLEAN=",
+                    machine_arch and "TARGET_ARCH=" .. machine_arch or nil,
+                    self.kernel_config and "KERNCONF=" .. self.kernel_config or nil,
+                    self.kernel_modules and "MODULES_OVERRIDE=" .. self.kernel_modules or nil,
+                    self.toolchain and "CROSS_TOOLCHAIN=" .. self.toolchain or nil,
                 }
-                if not self.clean then
-                    table.insert(args, "WITHOUT_CLEAN=")
-                end
-                table.insert(args, "TARGET=" .. machine)
-                if machine_arch then
-                    table.insert(args, "TARGET_ARCH=" .. machine_arch)
-                end
-                if self.kernel_config then
-                    table.insert(args, "KERNCONF=" .. self.kernel_config)
-                end
-                if self.kernel_modules then
-                    table.insert(args, "MODULES_OVERRIDE=" .. self.kernel_modules)
-                end
                 if self.make_arguments then
                     for arg in self.make_arguments:gmatch("%S+") do
                         table.insert(args, arg)
                     end
-                end
-                if self.toolchain then
-                    table.insert(args, "CROSS_TOOLCHAIN=" .. self.toolchain)
                 end
                 -- ... and add the make(1) target...
                 table.insert(args, make_target)
