@@ -1419,6 +1419,7 @@ function TaskSchedule:_ctor(args)
 
         if not self.tasks[t.name] then
             for k, v in pairs(t.parameters) do
+                v.name = k
                 t.parameters[k] = TaskParameter(v)
             end
             self.tasks[t.name] = t
