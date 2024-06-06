@@ -2099,16 +2099,20 @@ Task{
             description = "The hostname for the VM",
             default = "freebsd",
         },
-        kld_list = {
-            description = "A list of kernel modules to load upon boot via rc.conf",
-            default = "",
-        },
         image_size = {
             description = "The size of the VM image in bytes",
             default = "10g",
         },
+        loader_kld_list = {
+            description = "A list of kernel modules to load upon boot via loader.conf",
+            default = "",
+        },
         packages = {
             description = "A list of packages to install on the VM upon first boot",
+            default = "",
+        },
+        rc_kld_list = {
+            description = "A list of kernel modules to load upon boot via rc.conf",
             default = "",
         },
         ssh_users = {
@@ -2173,15 +2177,20 @@ Task{
                 mtree:add("." .. path)
             end
 
-            local klds = {}
-            for kld in self.kld_list:gmatch("%S+") do
-                table.insert(klds, "kld_list=\"${kld_list} " .. kld .. "\"")
+            local loader_klds = {}
+            for kld in self.loader_kld_list:gmatch("%S+") do
+                table.insert(loader_klds, kld .. "_load=\"YES\"")
+            end
+            local rc_klds = {}
+            for kld in self.rc_kld_list:gmatch("%S+") do
+                table.insert(rc_klds, "kld_list=\"${kld_list} " .. kld .. "\"")
             end
 
             conffile("/boot/loader.conf",
                 "autoboot_delay=1",
                 "console=comconsole",
-                self.filesystem == "zfs" and "zfs_load=YES" or "")
+                self.filesystem == "zfs" and "zfs_load=YES" or "",
+                table.unpack(loader_klds))
             conffile("/etc/rc.conf",
                 "hostname=" .. self.hostname,
                 "ifconfig_vtnet0=SYNCDHCP", -- XXX-MJ interface name is hard-coded
@@ -2190,7 +2199,7 @@ Task{
                 "growfs_enable=YES",
                 "sshd_enable=YES",
                 self.filesystem == "zfs" and "zfs_enable=YES" or "",
-                table.unpack(klds))
+                table.unpack(rc_klds))
             conffile("/etc/fstab",
                 self.filesystem == "ufs" and "/dev/gpt/rootfs / ufs rw 1 1" or "",
                 "/dev/gpt/swap none swap sw 0 0")
@@ -2497,7 +2506,7 @@ Task{"freebsd-src-vm-image",
         },
     },
     parameters = {
-        kld_list = {
+        rc_kld_list = {
             default = "carp dummynet if_bridge if_epair if_ovpn if_stf ipdivert ipsec " ..
                       "mac_bsdextended mqueuefs pf pflog pfsync sctp",
         },
@@ -2629,7 +2638,7 @@ Task{"freebsd-src-vm-image",
         },
     },
     parameters = {
-        kld_list = {
+        rc_kld_list = {
             default = "dtraceall kinst"
         },
         image_size = {
