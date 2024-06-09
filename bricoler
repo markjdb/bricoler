@@ -2516,7 +2516,7 @@ Task{"freebsd-src-vm-image",
             default = "30g"
         },
         packages = {
-            default = "coreutils python py39-pytest py39-scapy perl5 jq ksh93 " ..
+            default = "coreutils python devel/py-pytest net/scapy perl5 jq ksh93 " ..
                       "llvm gtar isc-dhcp44-server sudo"
         },
         ssh_users = {
