@@ -861,6 +861,7 @@ function BhyveRun:_ctor()
                 adddev("virtio-blk," .. disk)
             end
         end
+        adddev("virtio-rnd")
         if self.gdb_addr then
             table.append(bhyveargs, "-G", self.gdb_addr)
         end
@@ -983,7 +984,8 @@ function QEMURun:_ctor(args)
             "-smp", tostring(self.ncpus),
             "-m", tostring(self.memory) .. "M",
             "-cpu", cpu,
-            "-M", machine)
+            "-M", machine,
+            "-device virtio-rng-pci")
         if bios then
             if not access(bios[1], "r") then
                 errx("BIOS image %s is not available, install %s", bios[1], bios[2])
