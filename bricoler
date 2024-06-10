@@ -2609,7 +2609,7 @@ the VM is shut down.
                             self.tests
             self.VM:consrun(kyuacmd, 12 * 60 * 60)
             local reportcmd = "kyua report --verbose " ..
-                              "--results-filter passed,skipped,xfail,broken,failed " ..
+                              "--results-filter skipped,xfail,broken,failed " ..
                               "--output=/root/kyua_report.txt " ..
                               "-r /root/kyua.db"
             self.VM:consrun(reportcmd, 60)
