@@ -2416,7 +2416,7 @@ Task{"freebsd-src-vm-image",
 }
 
 Task{
-    name = "freebsd-vm-run",
+    name = "freebsd-vm-boot",
     description = "Boot a VM running FreeBSD",
     inputs = {
         build = "freebsd-src-build",
@@ -2541,8 +2541,8 @@ kern.crypto.allow_soft=1
     end,
 }
 
-Task{"freebsd-vm-run",
-    name = "freebsd-src-regression-suite-run",
+Task{"freebsd-vm-boot",
+    name = "freebsd-src-regression-suite",
     description = "Run the FreeBSD regression test suite inside a VM",
     long_description = [[
 This task will run the FreeBSD regression test suite in a VM.  By default,
@@ -2656,8 +2656,8 @@ Task{"freebsd-src-vm-image",
     },
 }
 
-Task{"freebsd-src-regression-suite-run",
-    name = "freebsd-src-dtrace-regression-suite-run",
+Task{"freebsd-src-regression-suite",
+    name = "freebsd-src-dtrace-regression-suite",
     description = "Run the DTrace regression test suite inside a VM",
     inputs = {
         vm_image = "freebsd-src-dtrace-regression-suite-vm-image",
@@ -2717,8 +2717,8 @@ Task{"freebsd-src-vm-image",
     end,
 }
 
-Task{"freebsd-vm-run",
-    name = "freebsd-src-stress2-run",
+Task{"freebsd-vm-boot",
+    name = "freebsd-src-stress2",
     description = "Run the stress2 test suite inside a VM",
     long_description = [[
 
@@ -2758,7 +2758,7 @@ Task{"freebsd-vm-run",
     end,
 }
 
-Task{"freebsd-vm-run",
+Task{"freebsd-vm-boot",
     name = "freebsd-src-dev-vm",
     description = "Run a VM with a development environment for FreeBSD",
     inputs = {
