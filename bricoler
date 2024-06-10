@@ -1394,8 +1394,6 @@ local TaskSchedule = Class({
     parameters = "table",
     -- The name of the task to run.
     target = "string",
-    -- The root of the working directory in which all tasks will run.
-    workdir = "string",
 })
 
 function TaskSchedule:_ctor(args)
