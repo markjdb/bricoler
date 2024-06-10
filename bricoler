@@ -169,7 +169,7 @@ function table.pretty(t, maxdepth)
     return _pretty(t, maxdepth, 0)
 end
 
-function orch_spawn(...)
+local function orch_spawn(...)
     print(("%s: %s"):format(ansicolor("ORCH", "green"), table.concat({...}, " ")))
     local o = orch.spawn(...)
     if o == nil then
