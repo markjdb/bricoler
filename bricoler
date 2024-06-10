@@ -1651,6 +1651,8 @@ Task{
             unlink(dbpath)
             exec("kyua", "test", "-k", "tests/Kyuafile", "-r", dbpath)
             self.test_results = dbpath
+        else
+            self.test_results = "/dev/null"
         end
     end
 }
