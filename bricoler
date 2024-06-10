@@ -1648,6 +1648,7 @@ Task{
         exec("make", "all", "-j", ctx.maxjobs)
         if self.tests then
             local dbpath = cwd .. "/results.db"
+            unlink(dbpath)
             exec("kyua", "test", "-k", "tests/Kyuafile", "-r", dbpath)
             self.test_results = dbpath
         end
