@@ -2782,9 +2782,12 @@ if _getuid.geteuid() == 0 then
     errx("bricoler must not be run as root")
 end
 
-local workdir = os.getenv("BRICOLER_WORKDIR")
-if not workdir or workdir == "" then
-    workdir = os.getenv("HOME") .. "/bricoler"
+local function workdir_default()
+    local workdir = os.getenv("BRICOLER_WORKDIR")
+    if not workdir or workdir == "" then
+        workdir = os.getenv("HOME") .. "/bricoler"
+    end
+    return workdir
 end
 
 local Argparse = require 'contrib.argparse'
@@ -2803,7 +2806,7 @@ cmds.run:argument("action")
         :description("Optional auxilliary action name")
 cmds.run:option("--workdir")
         :description("Working directory")
-        :default(workdir)
+        :default(workdir_default())
 cmds.run:option("-j --maxjobs")
         :description("Maximum number of CPUs to use")
         :default(tostring(sysctl("kern.smp.cpus")))
