@@ -2020,6 +2020,7 @@ options 	KCOV
 
         -- Build up the syz-manager configuration file and start running.
         do
+            local machine, machine_arch = self.freebsd_build.machine_tuple:match("^(%w+)/(%w+)$")
             local syzconf = pwd() .. "/syz-manager.conf"
             local workdir = pwd() .. "/workdir"
             mkdir(workdir)
@@ -2050,7 +2051,9 @@ options 	KCOV
     hypervisor_args = hypervisor_args,
     image_path = image_path,
     kernel_src = self.freebsd_src.path,
-    kernel_obj = self.freebsd_build.objdir,
+    kernel_obj = sprintf("%s/%s/%s.%s/sys/SYZKALLER",
+                         self.freebsd_build.objdir, self.freebsd_src.path,
+                         machine, machine_arch),
     sshkey = self.vm_image.ssh_key_directory .. "/id_ed25519_root",
     syzkaller_path = self.syzkaller_build.bindir .. "/..",
     workdir = workdir,
