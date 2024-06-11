@@ -1893,10 +1893,6 @@ debug mode.
         vm_image = "freebsd-src-syzkaller-vm-image",
     },
     parameters = {
-        bridge_interface = {
-            description = "The network interface used to bridge VMs",
-            default = "syz-bridge",
-        },
         dashboard_addr = {
             description = "The address on which the dashboard should listen for HTTP",
             default = "0.0.0.0:8080",
