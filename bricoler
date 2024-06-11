@@ -2110,6 +2110,10 @@ Task{
             description = "A list of kernel modules to load upon boot via loader.conf",
             default = "",
         },
+        loader_tunables = {
+            description = "A set of loader tunables to set prior to boot",
+            default = "",
+        },
         packages = {
             description = "A list of packages to install on the VM upon first boot",
             default = "",
@@ -2184,16 +2188,21 @@ Task{
             for kld in self.loader_kld_list:gmatch("%S+") do
                 table.insert(loader_klds, kld .. "_load=\"YES\"")
             end
+            local loader_tunables = {}
+            for tunable in self.loader_tunables:gmatch("%S+") do
+                table.insert(loader_tunables, tunable)
+            end
             local rc_klds = {}
             for kld in self.rc_kld_list:gmatch("%S+") do
                 table.insert(rc_klds, "kld_list=\"${kld_list} " .. kld .. "\"")
             end
 
+            loader_conf_entries = table.append(loader_klds, table.unpack(loader_tunables))
             conffile("/boot/loader.conf",
                 "autoboot_delay=1",
                 "console=comconsole",
                 self.filesystem == "zfs" and "zfs_load=YES" or "",
-                table.unpack(loader_klds))
+                table.unpack(loader_conf_entries))
             conffile("/etc/rc.conf",
                 "hostname=" .. self.hostname,
                 "ifconfig_vtnet0=SYNCDHCP", -- XXX-MJ interface name is hard-coded
