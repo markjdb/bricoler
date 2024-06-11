@@ -414,9 +414,10 @@ local function unused_tcp_port(addr)
     errx("Failed to find an unused TCP port")
 end
 
--- Return the environment as an array of "VAR=VAL" strings.
-local function environ()
-    local env = {}
+-- Return the environment as an array of "VAR=VAL" strings.  Additional
+-- parameters are added to the environment.
+local function environ(...)
+    local env = {...}
     local stdout = runcmd("env", "-0")
     for line in stdout:gmatch("[^\0]+") do
         table.insert(env, line)
@@ -1771,10 +1772,11 @@ Task{
                 -- ... and add the make(1) target...
                 table.insert(args, make_target)
                 -- ... and finally customize the current environment.
-                local env = environ()
-                table.insert(env, "MAKEOBJDIRPREFIX=" .. self.objdir)
-                table.insert(env, "SRCCONF=/dev/null")
-                table.insert(env, "__MAKE_CONF=/dev/null")
+                local env = environ(
+                    "MAKEOBJDIRPREFIX=" .. self.objdir,
+                    "SRCCONF=/dev/null",
+                    "__MAKE_CONF=/dev/null"
+                )
                 table.insert(args, env)
                 exec("make", "-C", self.src.path, table.unpack(args))
             end
@@ -1835,8 +1837,7 @@ Task{
 
         -- Build the syzkaller executables.
         do
-            local env = environ()
-            table.insert(env, "GOMAXPROCS=" .. ctx.maxjobs)
+            local env = environ("GOMAXPROCS=" .. ctx.maxjobs)
 
             -- The syzkaller build consumes huge amounts of memory, limit
             -- parallelism further to minimize sadness.  Despite the name this
