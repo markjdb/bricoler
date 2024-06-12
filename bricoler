@@ -1771,11 +1771,11 @@ Task{
                     "METALOG=" .. metalog,
                     "TARGET=" .. machine,
                     self.clean and "WITH_CLEAN=" or "WITHOUT_CLEAN=",
-                    machine_arch and "TARGET_ARCH=" .. machine_arch or nil,
-                    self.kernel_config and "KERNCONF=" .. self.kernel_config or nil,
-                    self.kernel_modules and "MODULES_OVERRIDE=" .. self.kernel_modules or nil,
-                    self.toolchain and "CROSS_TOOLCHAIN=" .. self.toolchain or nil,
                 }
+                table.insert(args, machine_arch and "TARGET_ARCH=" .. machine_arch or nil)
+                table.insert(args, self.kernel_config and "KERNCONF=" .. self.kernel_config or nil)
+                table.insert(args, self.kernel_modules and "MODULES_OVERRIDE=" .. self.kernel_modules or nil)
+                table.insert(args, self.toolchain and "CROSS_TOOLCHAIN=" .. self.toolchain or nil)
                 if self.make_arguments then
                     for arg in self.make_arguments:gmatch("%S+") do
                         table.insert(args, arg)
