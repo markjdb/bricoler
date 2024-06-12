@@ -789,7 +789,7 @@ function BhyveRun:_bootrom()
             "/usr/local/share/uefi-firmware/BHYVE_UEFI.fd",
             "edk2-bhyve"
         }
-    elseif self.machine_tuple == "arm64/aarch64" then
+    elseif self.machine_tuple:match("^arm64/.*$") then
         return {
             "/usr/local/share/u-boot/u-boot-bhyve-arm64/u-boot.bin",
             "u-boot-bhyve-arm64"
@@ -810,8 +810,9 @@ function BhyveRun:_ctor()
                 errx("Host machine is %s, but machine type is %s",
                      host, self.machine_tuple)
             end
-        elseif host == "arm64/aarch64" then
-            if self.machine_tuple ~= "arm64/aarch64" then
+        elseif host:match("^arm64/.*") then
+            if self.machine_tuple ~= "arm64/aarch64" and
+               self.machine_tuple ~= "arm64/aarch64c" then
                 errx("Host machine is %s, but machine type is %s",
                      host, self.machine_tuple)
             end
@@ -924,6 +925,9 @@ end
 function QEMURun:_bios()
     local bioses = {
         ["arm64/aarch64"] = {
+            "/usr/local/share/qemu/edk2-aarch64-code.fd", "qemu"
+        },
+        ["arm64/aarch64c"] = {
             "/usr/local/share/qemu/edk2-aarch64-code.fd", "qemu"
         },
         ["arm/armv7"] = {
