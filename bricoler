@@ -928,7 +928,7 @@ function QEMURun:_bios()
             "/usr/local/share/qemu/edk2-aarch64-code.fd", "qemu"
         },
         ["arm64/aarch64c"] = {
-            "/usr/local/share/qemu/edk2-aarch64-code.fd", "qemu"
+            "/usr/local64/share/qemu-cheri/edk2-aarch64-code.fd", "qemu"
         },
         ["arm/armv7"] = {
             "/usr/local/share/u-boot/u-boot-qemu-arm/u-boot.bin", "u-boot-qemu-arm",
