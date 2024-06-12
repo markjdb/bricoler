@@ -968,6 +968,7 @@ function QEMURun:_machine()
         return self.machine
     end
     local machines = {
+        ["arm64/aarch64c"] = "virt,gic-version=3",
         ["amd64/amd64"] = "q35",
         ["i386/i386"] = "q35",
         ["powerpc/powerpc64"] = "pseries,cap-hpt-max-page-size=16M",
