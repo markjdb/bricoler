@@ -863,7 +863,11 @@ function BhyveRun:_ctor()
                 adddev("virtio-blk," .. disk)
             end
         end
-        adddev("virtio-rnd")
+        if not self.machine_tuple:match("^arm64/.*$") then
+            -- Work around a bhyve bug/limitation on arm64.
+            -- See https://reviews.freebsd.org/D45049 .
+            adddev("virtio-rnd")
+        end
         if self.gdb_addr then
             table.append(bhyveargs, "-G", self.gdb_addr)
         end
