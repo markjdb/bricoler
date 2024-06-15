@@ -2534,7 +2534,8 @@ Task{"freebsd-src-vm-image",
     },
     parameters = {
         loader_tunables = {
-            default = "net.inet.ip.fw.default_to_accept=1",
+            default = "net.inet.ip.fw.default_to_accept=1 " ..
+                      "vfs.zfs.reference_tracking_enable=1",
         },
         rc_kld_list = {
             default = "carp cryptodev dummynet if_bridge if_epair if_ovpn if_stf ipdivert " ..
@@ -2562,6 +2563,7 @@ Task{"freebsd-src-vm-image",
 kern.ipc.tls.enable=1
 vfs.aio.enable_unsafe=1
 kern.crypto.allow_soft=1
+vm.panic_on_oom=1
 ]])
         mtree:add("./etc/sysctl.conf")
 
