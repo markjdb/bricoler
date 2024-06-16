@@ -24,6 +24,7 @@ local M = {
     read = require 'read',
     socket = require 'socket',
     stat = require 'stat',
+    symlink = require 'symlink',
     sysctl = require 'sysctl',
     unlink = require 'unlink',
     wait = require 'wait',

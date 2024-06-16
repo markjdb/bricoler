@@ -10,6 +10,7 @@ SUBDIR=	access	\
 	read	\
 	socket	\
 	stat	\
+	symlink	\
 	sysctl	\
 	unlink	\
 	wait
