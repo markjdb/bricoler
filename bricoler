@@ -2575,6 +2575,15 @@ vm.panic_on_oom=1
 ]])
         mtree:add("./etc/sysctl.conf")
 
+        mkdir(stagedir .. "/usr/local/bin")
+        mtree:add("./usr/local/bin")
+        symlink("/usr/local/bin/clang", stagedir .. "/usr/local/bin/cc")
+        mtree:add("./usr/local/bin/cc")
+        symlink("/usr/local/bin/clang++", stagedir .. "/usr/local/bin/c++")
+        mtree:add("./usr/local/bin/c++")
+        symlink("/usr/local/bin/clang-cpp", stagedir .. "/usr/local/bin/cpp")
+        mtree:add("./usr/local/bin/cpp")
+
         self:super(ctx)
     end,
 }
@@ -2628,12 +2637,6 @@ the VM is shut down.
 
         -- Boot the VM and log in.
         self:super(ctx)
-
-        -- Hack: set up some symlinks so that cc etc. are in the PATH.  Some
-        -- tests depend on this.  The VM image should contain an llvm package.
-        self.VM:consrun("ln -s /usr/local/bin/clang /usr/local/bin/cc")
-        self.VM:consrun("ln -s /usr/local/bin/clang++ /usr/local/bin/c++")
-        self.VM:consrun("ln -s /usr/local/bin/clang-cpp /usr/local/bin/cpp")
 
         -- Run the test suite and copy the results back to the host.
         do
