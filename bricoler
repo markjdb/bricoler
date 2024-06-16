@@ -196,6 +196,7 @@ local posix_spawn = require 'lib.freebsd.sys'.posix_spawn
 local _read = require 'lib.freebsd.sys'.read
 local _socket = require 'lib.freebsd.sys'.socket
 local _stat = require 'lib.freebsd.sys'.stat
+local _symlink = require 'lib.freebsd.sys'.symlink
 local _sysctl = require 'lib.freebsd.sys'.sysctl
 local _unlink = require 'lib.freebsd.sys'.unlink
 local _wait = require 'lib.freebsd.sys'.wait
@@ -447,6 +448,10 @@ local function zfs_get(path, prop)
     return stdout:match("%S+")
 end
 
+local function symlink(target, link)
+    return _symlink.symlink(target, link)
+end
+
 local function sysctl(name)
     return _sysctl.sysctlbyname(name)
 end
@@ -531,7 +536,7 @@ end
 
 function MTree:add(path)
     local fullpath = self.root .. "/" .. path
-    local sb = _stat.stat(fullpath)
+    local sb = _stat.lstat(fullpath)
     if not sb then
         errx("Failed to stat %s", fullpath)
     end
@@ -542,8 +547,10 @@ function MTree:add(path)
         type = "dir"
     elseif _stat.S_ISREG(sb.mode) then
         type = "file"
+    elseif _stat.S_ISLNK(sb.mode) then
+        type = "link"
     else
-        errx("Path %s is not a directory or regular file", fullpath)
+        errx("Path %s is not a directory, symlink, or regular file", fullpath)
     end
     table.insert(self._entries, {
         path = path,
@@ -551,6 +558,7 @@ function MTree:add(path)
         type = type,
         uname = self.defaults.uname,
         gname = self.defaults.gname,
+        link = type == "link" and _symlink.readlink(fullpath) or nil,
     })
 end
 
