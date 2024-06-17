@@ -1383,7 +1383,7 @@ function Task:run(ctx)
         if not action then
             errx("Task '%s' has no action '%s'", self.name, ctx.action)
         end
-        action(params)
+        action(params, ctx)
     else
         print(prefix .. " running")
         self.starttime = os.time()
@@ -2526,6 +2526,31 @@ Task{
                  "-p", port,
                  "root@" .. addr)
         end,
+
+        -- SCP from the VM.
+        scpfrom = function(self, ctx)
+            assert(ctx)
+            assert(ctx.action_arg1)
+            assert(ctx.action_arg2)
+
+            local f = io.open_checked("./ssh-addr", "r")
+            local sshaddr = f:read("*l")
+            f:close()
+
+            local addr, port = sshaddr:match("^(.*):(%d+)$")
+            local user = "root"
+            local key = pwd() .. "/ssh-keys" .. "/id_ed25519_root"
+            local src = ctx.action_arg1
+            local dst = ctx.action_arg2
+            exec("scp",
+                 "-i", key,
+                 "-P", port,
+                 "-o", "StrictHostKeyChecking=no",
+                 "-o", "UserKnownHostsFile=/dev/null",
+                 user .. "@" .. addr .. ":" .. src,
+                 dst
+            )
+        end,
     }
 }
 
@@ -2847,6 +2872,12 @@ cmds.run:argument("task")
 cmds.run:argument("action")
         :args("0-1")
         :description("Optional auxilliary action name")
+cmds.run:argument("action_arg1")
+        :args("?")
+        :description("Optional auxilliary action's argument 1")
+cmds.run:argument("action_arg2")
+        :args("?")
+        :description("Optional auxilliary action's argument 2")
 cmds.run:option("--workdir")
         :description("Working directory")
         :default(workdir_default())
@@ -2909,6 +2940,8 @@ elseif args.run then
     local ts = TaskSchedule{
         ctx = {
             action = args.action,
+            action_arg1 = args.action_arg1,
+            action_arg2 = args.action_arg2,
             maxjobs = tonumber(args.maxjobs),
             workdir = args.workdir,
         },
