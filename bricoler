@@ -2695,6 +2695,23 @@ Task{"freebsd-src-vm-image",
             default = "root",
         },
     },
+
+    run = function (self, ctx)
+        self.build = self.build:run(ctx)
+        local stagedir = self.build.stagedir
+        local mtree = self.build.metalog
+
+        mkdir(stagedir .. "/usr/local/bin")
+        mtree:add("./usr/local/bin")
+        symlink("/usr/local/bin/clang", stagedir .. "/usr/local/bin/cc")
+        mtree:add("./usr/local/bin/cc")
+        symlink("/usr/local/bin/clang++", stagedir .. "/usr/local/bin/c++")
+        mtree:add("./usr/local/bin/c++")
+        symlink("/usr/local/bin/clang-cpp", stagedir .. "/usr/local/bin/cpp")
+        mtree:add("./usr/local/bin/cpp")
+
+        self:super(ctx)
+    end,
 }
 
 Task{"freebsd-src-regression-suite",
