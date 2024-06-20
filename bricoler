@@ -2620,6 +2620,11 @@ the VM is shut down.
         memory = {
             default = 8 * 1024
         },
+        parallelism = {
+            -- Defaults to the number of vCPUs.
+            description = "The number of tests to run in parallel",
+            type = "number",
+        },
         tests = {
             description = "A list of tests to run, relative to /usr/tests",
             type = "string",
@@ -2641,7 +2646,7 @@ the VM is shut down.
         -- Run the test suite and copy the results back to the host.
         do
             local kyuavars = {
-                "-v", "parallelism=" .. self.ncpus,
+                "-v", "parallelism=" .. self.parallelism or self.ncpus,
                 "-v", "test_suites.FreeBSD.allow_sysctl_side_effects=1",
                 "-v", "test_suites.FreeBSD.disks=\"/dev/vtbd1 /dev/vtbd2 /dev/vtbd3 /dev/vtbd4\"",
             }
@@ -2721,6 +2726,10 @@ Task{"freebsd-src-regression-suite",
         vm_image = "freebsd-src-dtrace-regression-suite-vm-image",
     },
     parameters = {
+        parallelism = {
+            -- Disable parallelism until flaky tests have been fixed.
+            default = 1,
+        },
         tests = {
             default = "cddl/usr.sbin/dtrace",
         },
