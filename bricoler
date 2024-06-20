@@ -2646,7 +2646,7 @@ the VM is shut down.
         -- Run the test suite and copy the results back to the host.
         do
             local kyuavars = {
-                "-v", "parallelism=" .. self.parallelism or self.ncpus,
+                "-v", "parallelism=" .. (self.parallelism or self.ncpus),
                 "-v", "test_suites.FreeBSD.allow_sysctl_side_effects=1",
                 "-v", "test_suites.FreeBSD.disks=\"/dev/vtbd1 /dev/vtbd2 /dev/vtbd3 /dev/vtbd4\"",
             }
