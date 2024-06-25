@@ -2546,15 +2546,19 @@ Task{"freebsd-src-vm-image",
                       "vfs.zfs.reference_tracking_enable=1",
         },
         rc_kld_list = {
-            default = "carp cryptodev dummynet if_bridge if_epair if_ovpn if_stf ipdivert " ..
-                      "ipfw ipsec mac_bsdextended mqueuefs pf pflog pfsync sctp",
+            default = "accf_data accf_dns accf_http accf_tls " ..
+                      "carp cryptodev ctl dummynet " ..
+                      "if_bridge if_epair if_ovpn if_stf " ..
+                      "ipdivert ipfw ipfw ipfw_nat ipl ipsec " ..
+                      "mac_bsdextended mqueuefs " ..
+                      "pf pflog pflow pfsync sctp tcpmd5",
         },
         image_size = {
             default = "30g"
         },
         packages = {
             default = "coreutils python devel/py-pytest net/scapy perl5 jq ksh93 " ..
-                      "llvm gtar isc-dhcp44-server openvpn sudo"
+                      "llvm gtar isc-dhcp44-server openvpn sudo nist-kat git-lite"
         },
         ssh_users = {
             -- It's useful to be able to log in to have a look around.
