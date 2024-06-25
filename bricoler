@@ -2330,16 +2330,20 @@ fi
             ::pkgdone::
         end
 
+        local machine, machine_arch = self.build.machine_tuple:match("^(%w+)/(%w+)")
+        local image_prefix = pwd() .. "/image." .. machine .. "." .. machine_arch
+
         -- Create the EFI system partition, if applicable.
         local has_efi = false
-        local machine, machine_arch = self.build.machine_tuple:match("^(%w+)/(%w+)")
+        local esp_dir = image_prefix .. "-efi"
+        local esp_image = image_prefix .. "-esp.fs"
         do
             if machine == "i386" or machine == "powerpc" then
                 goto noefi
             end
 
             local src = stagedir .. "/boot/loader.efi"
-            local targetdir = pwd() .. "/efi/EFI/BOOT"
+            local targetdir = esp_dir .. "/EFI/BOOT"
             makepath(targetdir)
 
             local efibins = {
@@ -2356,7 +2360,7 @@ fi
             exec("makefs", "-t", "msdos", "-o", "fat_type=16",
                  "-o", "sectors_per_cluster=1",
                  "-o", "volume_label=EFI",
-                 "-s", "4m", pwd() .. "/esp.fs", pwd() .. "/efi")
+                 "-s", "4m", esp_image, esp_dir)
             has_efi = true
 
             ::noefi::
@@ -2364,7 +2368,7 @@ fi
 
         -- Finalize the metalog and write it out, then create the root
         -- filesystem image.
-        local fs_image = pwd() .. "/image.fs"
+        local fs_image = image_prefix .. ".fs"
         do
             -- Remove the size key from the mtree entries, as they may be
             -- incorrect after file modification.
@@ -2372,7 +2376,7 @@ fi
                 entry.size = nil
                 return entry
             end)
-            local metalog = pwd() .. "/METALOG.mtree"
+            local metalog = image_prefix .. "-METALOG.mtree"
             mtree:write(metalog)
 
             local makefs_cmd = {"makefs"}
@@ -2401,7 +2405,7 @@ fi
 
         -- Now put everything together and create the disk image.
         do
-            self.image = pwd() .. "/image." .. machine .. "." .. machine_arch .. ".raw"
+            self.image = image_prefix .. ".img"
             local mkimg_cmd = {
                 "mkimg",
                 "-f", "raw",
@@ -2424,7 +2428,7 @@ fi
                         "-p", "freebsd-boot/bootfs:=" .. bootdir .. "/gptboot")
                 end
                 if has_efi then
-                    table.append(mkimg_cmd, "-p", "efi:=" .. pwd() .. "/esp.fs")
+                    table.append(mkimg_cmd, "-p", "efi:=" .. esp_image)
                 end
                 local parttype = self.filesystem == "ufs" and "freebsd-ufs" or "freebsd-zfs"
                 table.append(mkimg_cmd,
