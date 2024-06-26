@@ -31,6 +31,7 @@ local M = {
 
     errno = require 'errno',
     getaddrinfo = require 'getaddrinfo',
+    glob = require 'glob',
     libgen = require 'libgen',
     mktemp = require 'mktemp',
     posix_spawn = require 'posix_spawn',

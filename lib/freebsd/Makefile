@@ -9,6 +9,7 @@ WARNS?=		6
 
 SUBDIR=	errno		\
 	getaddrinfo	\
+	glob		\
 	libgen		\
 	mktemp		\
 	posix_spawn	\
