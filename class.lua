@@ -91,6 +91,10 @@ local function class(proto, props)
     end
     c._proto = proto
     c._props = props
+    -- Let the consumer use the prototype fields as static class fields. 
+    for k, v in pairs(proto) do
+        c[k] = v
+    end
 
     -- Provide a default constructor so that classes can override it.
     c._ctor = function()
