@@ -186,6 +186,7 @@ local _access = require 'lib.freebsd.sys'.access
 local _chdir = require 'lib.freebsd.sys'.chdir
 local _errno = require 'lib.freebsd.sys'.errno
 local getaddrinfo = require 'lib.freebsd.sys'.getaddrinfo
+local glob = require 'lib.freebsd.sys'.glob
 local _getcwd = require 'lib.freebsd.sys'.getcwd
 local _getuid = require 'lib.freebsd.sys'.getuid
 local _mkdir = require 'lib.freebsd.sys'.mkdir
@@ -1774,21 +1775,22 @@ Task{
         -- Set up the object directory for the build.  It may be useful to use
         -- the default objdir instead, but that makes cleaning more
         -- complicated.
-        self.objdir = pwd() .. "/obj." .. machine .. "." .. machine_arch
+        self.objdir = sprintf("%s/obj.%s.%s", pwd(), machine, machine_arch)
         mkdir(self.objdir)
 
         -- Create a staging directory for install targets, one per machine
         -- target.
-        self.stagedir = pwd() .. "/stage." .. machine .. "." .. machine_arch
+        self.stagedir = sprintf("%s/stage.%s.%s", pwd(), machine, machine_arch)
         mkdir(self.stagedir)
 
         -- Set up the build arguments and environment, then run make(1).  We
         -- might have no make(1) targets to run, in which case there's nothing
         -- to do.
         do
-            local metalog = self.stagedir .. "/METALOG.mtree"
-
             for make_target in self.make_targets:gmatch("%S+") do
+                -- We create one metalog per target and combine them later.
+                local metalog = sprintf("%s/METALOG.%s.mtree", self.stagedir, make_target)
+
                 -- Build up command-line arguments...
                 local args = {
                     "-ss",
@@ -1820,12 +1822,23 @@ Task{
                 exec("make", "-C", self.src.path, table.unpack(args))
             end
 
+            local metalogs = glob.glob(sprintf("%s/METALOG.*.mtree", self.stagedir))
+            local installworld_metalog = sprintf("%s/METALOG.installworld.mtree", self.stagedir)
+            for i, metalog in ipairs(metalogs) do
+                -- The installworld metalog has to come first, if it's there.
+                if metalog == installworld_metalog then
+                    table.remove(metalogs, i)
+                    table.insert(metalogs, 1, installworld_metalog)
+                    break
+                end
+            end
+
             -- Provide the output mtree for any installation targets.
             self.metalog = MTree{
                 -- This is not quite right since the user might conceivably
                 -- override our name, but hopefully they have no good reason to do
                 -- that.
-                src = metalog,
+                src = metalogs,
                 root = self.stagedir,
                 defaults = {
                     uname = "root",
