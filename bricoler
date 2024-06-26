@@ -443,6 +443,11 @@ local function netif_exists(iface, group)
     return false
 end
 
+local function isfile(path)
+    local sb = _stat.stat(path)
+    return sb and _stat.S_ISREG(sb.mode)
+end
+
 local function zfs_get(path, prop)
     local stdout = runcmd("zfs", "get", "-H", "-o", "value", prop, path)
     return stdout:match("%S+")
@@ -467,8 +472,7 @@ local function which(p)
     end
     for path in PATH:gmatch("([^:]+)") do
         local candidate = path .. "/" .. p
-        local sb = _stat.stat(candidate)
-        if sb and _stat.S_ISREG(sb.mode) and access(candidate, "rx") then
+        if isfile(candidate) and access(candidate, "rx") then
             return candidate
         end
     end
