@@ -499,22 +499,26 @@ local MTree = Class({
 }, {
     -- Default values for file entries.
     defaults = "table",
-    -- Path to the input mtree file.
-    src = "string",
+    -- Path to the input mtree file, or an array of input mtree paths.
+    src = "*",
     -- Root of the hierarchy defined by the mtree.
     root = "string",
 })
 
--- Load an mtree file into memory.
-function MTree:_ctor(args)
-    local f = io.open_checked(args.src, "r")
-    local sig = f:read("l")
-    if not sig then
-        errx("Failed to read mtree signature")
+function MTree:_load(src)
+    local f = io.open_checked(src, "r")
+
+    -- If we have more than one input file, only require the signature to be in
+    -- the first file.
+    if #self._entries == 0 then
+        local sig = f:read("l")
+        if not sig then
+            errx("Failed to read mtree signature")
+        elseif sig ~= self.signature then
+            errx("Unsupported mtree signature '%s'", sig)
+        end
     end
-    if sig ~= self.signature then
-        errx("Unsupported mtree signature '%s'", sig)
-    end
+
     -- Parse each line in the mtree file, e.g.,
     --   ./bin type=dir uname=root gname=wheel mode=0755
     -- Each line yields a table of key-value pairs.  The first element is saved
@@ -536,6 +540,14 @@ function MTree:_ctor(args)
         ::nextline::
     end
     f:close()
+end
+
+-- Load an mtree file into memory.
+function MTree:_ctor(args)
+    local srcs = (type(args.src) == "string" and {args.src} or args.src)
+    for _, src in ipairs(srcs) do
+        self:_load(src)
+    end
 end
 
 function MTree:add(path)
