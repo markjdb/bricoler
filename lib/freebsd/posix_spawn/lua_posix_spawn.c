@@ -44,7 +44,7 @@ static int
 l_posix_spawn1(lua_State *L, bool path)
 {
 	posix_spawn_file_actions_t file_actions, *file_actionsp;
-	posix_spawnattr_t attr;
+	posix_spawnattr_t attr, *attrp;
 	const char *file;
 	const char **argv;
 	const char **envp;
@@ -53,30 +53,59 @@ l_posix_spawn1(lua_State *L, bool path)
 	int argi, argc, envc, ret, ret1;
 	pid_t pid;
 
-	ret = posix_spawnattr_init(&attr);
-	if (ret != 0) {
-		lua_pushnil(L);
-		lua_pushstring(L, strerror(ret));
-		lua_pushinteger(L, ret);
-		return (3);
-	}
-
 	argi = 1;
 	file = luaL_checkstring(L, argi++);
 
-	if (lua_type(L, argi) == LUA_TUSERDATA) {
-		luaL_checkudata(L, argi, POSIX_SPAWN_FILE_ACTIONS_KEY);
-		file_actionsp = lua_touserdata(L, argi++);
-	} else {
-		luaL_checktype(L, argi, LUA_TTABLE);
-		file_actionsp = &file_actions;
-		ret = posix_spawn_file_actions_init(file_actionsp);
+	/*
+	 * File actions and spawn attributes are optional.  They must be
+	 * followed by a table.
+	 */
+	attrp = NULL;
+	file_actionsp = NULL;
+	if (lua_isuserdata(L, argi)) {
+		lua_getmetatable(L, argi);
+		luaL_getmetatable(L, POSIX_SPAWN_FILE_ACTIONS_KEY);
+		if (lua_rawequal(L, -1, -2)) {
+			file_actionsp = luaL_checkudata(L, argi,
+			    POSIX_SPAWN_FILE_ACTIONS_KEY);
+			argi++;
+		}
+		lua_pop(L, 2);
+	}
+	if (lua_isuserdata(L, argi)) {
+		void *val;
+
+		val = luaL_checkudata(L, argi, POSIX_SPAWNATTR_KEY);
+		if (val != NULL) {
+			attrp = val;
+			argi++;
+		}
+	}
+	luaL_checktype(L, argi, LUA_TTABLE);
+
+	/*
+	 * If the caller didn't provide a file actions or spawn attributes, set
+	 * up a no-op default.
+	 */
+	if (file_actionsp == NULL) {
+		ret = posix_spawn_file_actions_init(&file_actions);
 		if (ret != 0) {
 			lua_pushnil(L);
 			lua_pushstring(L, strerror(ret));
 			lua_pushinteger(L, ret);
 			return (3);
 		}
+		file_actionsp = &file_actions;
+	}
+	if (attrp == NULL) {
+		ret = posix_spawnattr_init(&attr);
+		if (ret != 0) {
+			lua_pushnil(L);
+			lua_pushstring(L, strerror(ret));
+			lua_pushinteger(L, ret);
+			return (3);
+		}
+		attrp = &attr;
 	}
 
 	argc = lua_rawlen(L, argi);
@@ -123,15 +152,17 @@ l_posix_spawn1(lua_State *L, bool path)
 	_argv = __DECONST(char * const *, argv);
 	_envp = __DECONST(char * const *, envp);
 	ret = path ?
-	    posix_spawnp(&pid, file, file_actionsp, &attr, _argv, _envp) :
-	    posix_spawn(&pid, file, file_actionsp, &attr, _argv, _envp);
+	    posix_spawnp(&pid, file, file_actionsp, attrp, _argv, _envp) :
+	    posix_spawn(&pid, file, file_actionsp, attrp, _argv, _envp);
 
 	if (file_actionsp == &file_actions) {
 		ret1 = posix_spawn_file_actions_destroy(file_actionsp);
 		assert(ret1 == 0);
 	}
-	ret1 = posix_spawnattr_destroy(&attr);
-	assert(ret1 == 0);
+	if (attrp == &attr) {
+		ret1 = posix_spawnattr_destroy(attrp);
+		assert(ret1 == 0);
+	}
 
 	free(argv);
 	if (envp != __DECONST(const char **, environ))
@@ -383,13 +414,7 @@ l_posix_spawnattr_setflags(lua_State *L)
 	flags = (short)lflags;
 
 	error = posix_spawnattr_setflags(attr, flags);
-	if (error != 0) {
-		lua_pushnil(L);
-		lua_pushstring(L, strerror(error));
-		lua_pushinteger(L, error);
-		return (3);
-	}
-
+	assert(error == 0);
 	lua_pushboolean(L, 1);
 	return (1);
 }
@@ -404,13 +429,7 @@ l_posix_spawnattr_getpgroup(lua_State *L)
 	attr = luaL_checkudata(L, 1, POSIX_SPAWNATTR_KEY);
 
 	error = posix_spawnattr_getpgroup(attr, &pgroup);
-	if (error != 0) {
-		lua_pushnil(L);
-		lua_pushstring(L, strerror(error));
-		lua_pushinteger(L, error);
-		return (3);
-	}
-
+	assert(error == 0);
 	lua_pushinteger(L, pgroup);
 	return (1);
 }
@@ -430,13 +449,7 @@ l_posix_spawnattr_setpgroup(lua_State *L)
 	pgrp = (pid_t)lpgrp;
 
 	error = posix_spawnattr_setpgroup(attr, pgrp);
-	if (error != 0) {
-		lua_pushnil(L);
-		lua_pushstring(L, strerror(error));
-		lua_pushinteger(L, error);
-		return (3);
-	}
-
+	assert(error == 0);
 	lua_pushboolean(L, 1);
 	return (1);
 }
