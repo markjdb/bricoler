@@ -189,6 +189,7 @@ local getaddrinfo = require 'lib.freebsd.sys'.getaddrinfo
 local glob = require 'lib.freebsd.sys'.glob
 local _getcwd = require 'lib.freebsd.sys'.getcwd
 local _getuid = require 'lib.freebsd.sys'.getuid
+local libgen = require 'lib.freebsd.sys'.libgen
 local _mkdir = require 'lib.freebsd.sys'.mkdir
 local _open = require 'lib.freebsd.sys'.open
 local _pipe = require 'lib.freebsd.sys'.pipe
@@ -2880,6 +2881,160 @@ Task{"freebsd-vm-boot",
             default = 8 * 1024
         },
     },
+}
+
+Task{"git-checkout",
+    name = "openzfs-src",
+    description = "Fetch the OpenZFS source code",
+    parameters = {
+        url = {
+            default = "https://github.com/openzfs/zfs",
+        },
+        branch = {
+            default = "master",
+        },
+    }
+}
+
+Task{
+    name = "openzfs-build",
+    description = "Build OpenZFS",
+    dependencies = {
+        "gmake",
+    },
+    inputs = {
+        src = "openzfs-src",
+    },
+    outputs = {
+        -- A directory containing all of the OpenZFS userspace components.
+        user_stagedir = "string",
+        -- A directory containing the OpenZFS kernel module.
+        kmod_stagedir = "string",
+    },
+    parameters = {
+        configure_args = {
+            description = "Extra arguments to pass to configure",
+            type = "string",
+        },
+    },
+
+    run = function(self, ctx)
+        self.src = self.src:run(ctx)
+
+        -- Userspace components are built first, then installed into this
+        -- directory.
+        local cwd = pwd()
+        self.user_stagedir = cwd .. "/install-user"
+        mkdir(self.user_stagedir)
+
+        cd(self.src.path)
+        if not isfile("./configure") then
+            exec("./autogen.sh")
+        end
+        do
+            local configure_args = {
+                "./configure",
+                "MAKE=gmake",
+                "--prefix=" .. self.user_stagedir,
+                "--with-config=user",
+            }
+            if self.configure_args then
+                for arg in self.configure_args:gmatch("%S+") do
+                    table.insert(configure_args, arg)
+                end
+            end
+            exec(table.unpack(configure_args))
+        end
+        exec("gmake", "-j", ctx.maxjobs, "-s")
+        exec("gmake", "install")
+
+        -- Now build the kernel module.
+        self.kmod_stagedir = cwd .. "/install-kmod"
+        cd("module")
+        exec("make", "-j", ctx.maxjobs, "-s", "-f", "./Makefile.bsd", "CC=cc")
+        -- Here we set WITHOUT_DEBUG_FILES to prevent Makefile.bsd from running
+        -- mtree.  It has no other effect for FreeBSD kernel modules.
+        exec("make", "-s", "-f", "./Makefile.bsd",
+             "KMODOWN=" .. _getuid.geteuid(),
+             "KMODGRP=" .. _getuid.getegid(),
+             "KMODDIR=",
+             "DEBUGDIR=",
+             "DESTDIR=" .. self.kmod_stagedir,
+             "WITHOUT_DEBUG_FILES=",
+             "install")
+    end
+}
+
+Task{"freebsd-src-vm-image",
+    name = "openzfs-test-suite-vm-image",
+    description = "Build a VM image set up to run the OpenZFS test suite",
+    inputs = {
+        freebsd_build = {"freebsd-src-build",
+            make_arguments = "WITHOUT_ZFS= WITHOUT_TOOLCHAIN=",
+        },
+        openzfs_build = "openzfs-build",
+    },
+    parameters = {
+        filesystem = {
+            default = "ufs",
+        },
+        packages = {
+            default = "libunwind sudo",
+        },
+        ssh_users = {
+            -- It's useful to be able to log in to have a look around.
+            default = "root",
+        },
+    },
+
+    run = function(self, ctx)
+        self.freebsd_build = self.freebsd_build:run(ctx)
+
+        do
+            self.openzfs_build = self.openzfs_build:run(ctx)
+
+            local stagedir = self.freebsd_build.stagedir
+
+            -- Stage the user bits under /usr/local in the FreeBSD image.
+            local ext = "usr/local"
+            local src = self.openzfs_build.user_stagedir
+            local dst = stagedir .. "/" .. ext
+            exec("rm", "-rf", dst)
+            makepath(stagedir .. "/" .. libgen.dirname(ext))
+            exec("cp", "-R", src, dst)
+            local mtree = self.freebsd_build.metalog
+            mtree:stage("openzfs.mtree", stagedir, "./" .. ext)
+
+            exec("cp", self.openzfs_build.kmod_stagedir .. "/openzfs.ko",
+                       stagedir .. "/boot/kernel")
+            mtree:add("./boot/kernel/openzfs.ko")
+            exec("cp", self.openzfs_build.kmod_stagedir .. "/openzfs.ko.debug",
+                       stagedir .. "/usr/lib/debug/boot/kernel/")
+            mtree:add("./usr/lib/debug/boot/kernel/openzfs.ko.debug")
+        end
+
+        self:super(ctx)
+    end,
+}
+
+Task{"freebsd-vm-boot",
+    name = "openzfs-test-suite",
+    description = "Run the OpenZFS test suite inside a VM",
+    parameters = {
+        ncpus = {
+            default = 4,
+        },
+        memory = {
+            default = 16 * 1024,
+        },
+    },
+    inputs = {
+        vm_image = "openzfs-test-suite-vm-image",
+    },
+
+    run = function(self, ctx)
+        self:super(ctx)
+    end,
 }
 
 -------------------------------- Main --------------------------------
