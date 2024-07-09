@@ -7,7 +7,7 @@ install:
 	@echo "No install target is supported, run in-place"
 	@false
 
-ORCHSRC= contrib/orch
+ORCHSRC= ${.CURDIR}/contrib/orch
 
 orch: .PHONY
 	mkdir -p ${ORCHSRC}/build ${ORCHSRC}/install
