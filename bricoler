@@ -1790,6 +1790,7 @@ Task{
             for make_target in self.make_targets:gmatch("%S+") do
                 -- We create one metalog per target and combine them later.
                 local metalog = sprintf("%s/METALOG.%s.mtree", self.stagedir, make_target)
+                exec("truncate", "-s", "0", metalog)
 
                 -- Build up command-line arguments...
                 local args = {
