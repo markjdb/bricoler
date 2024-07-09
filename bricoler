@@ -2250,7 +2250,7 @@ Task{
                 table.insert(rc_klds, "kld_list=\"${kld_list} " .. kld .. "\"")
             end
 
-            loader_conf_entries = table.append(loader_klds, table.unpack(loader_tunables))
+            local loader_conf_entries = table.append(loader_klds, table.unpack(loader_tunables))
             conffile("/boot/loader.conf",
                 "autoboot_delay=1",
                 "console=comconsole",
