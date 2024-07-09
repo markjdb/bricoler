@@ -733,7 +733,6 @@ function VMRun.task_parameters()
         },
         disk_list = {
             description = "Additional files to add as disks",
-            type = "string",
             default = "",
         },
         hypervisor = {
