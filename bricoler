@@ -1676,7 +1676,7 @@ Task{
     run = function(self, ctx)
         self.src = self.src:run(ctx)
 
-        local configure_args = {}
+        local configure_args = {"./configure"}
         if self.asan then
             table.insert(configure_args, "--with-asan")
         end
@@ -1686,7 +1686,7 @@ Task{
 
         local cwd = pwd()
         cd(self.src.path)
-        exec("./configure", table.unpack(configure_args))
+        exec(table.unpack(configure_args))
         exec("make", "all", "-j", ctx.maxjobs)
         if self.tests then
             local dbpath = cwd .. "/results.db"
