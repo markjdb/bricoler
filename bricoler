@@ -894,11 +894,6 @@ function BhyveRun:_ctor()
                 adddev("virtio-blk," .. disk)
             end
         end
-        if self.tap_list then
-            for tap in self.tap_list:gmatch("%S+") do
-                adddev("virtio-net," .. tap)
-            end
-        end
         if not self.machine_tuple:match("^arm64/.*$") then
             -- Work around a bhyve bug/limitation on arm64.
             -- See https://reviews.freebsd.org/D45049 .
@@ -908,9 +903,14 @@ function BhyveRun:_ctor()
             table.append(bhyveargs, "-G", self.gdb_addr)
         end
         if self.ssh_addr then
-            -- This must be added last to work around a bhyve bug on arm64,
-            -- see https://reviews.freebsd.org/D45049.
+            -- This must be added after the first block device to work around a
+            -- bhyve bug on arm64, see https://reviews.freebsd.org/D45049.
             adddev(sprintf("virtio-net,slirp,hostfwd=tcp:%s-:22", self.ssh_addr))
+        end
+        if self.tap_list then
+            for tap in self.tap_list:gmatch("%S+") do
+                adddev("virtio-net," .. tap)
+            end
         end
 
         table.append(bhyveargs, vmname)
