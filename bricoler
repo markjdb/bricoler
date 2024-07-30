@@ -1145,11 +1145,15 @@ local TaskParameter = Class({
 })
 
 function TaskParameter:_ctor(args)
-    if args.default ~= nil then
-        if args.type == nil then
-            self.type = type(args.default)
+    local default = args.default
+    if default ~= nil then
+        if type(default) == "function" then
+            default = default()
         end
-        self:bind(args.default, "default")
+        if args.type == nil then
+            self.type = type(default)
+        end
+        self:bind(default, "default")
     end
 end
 
@@ -1746,6 +1750,11 @@ Task{
         kernel_config = {
             description = "The kernel configuration file to use for buildkernel",
             type = "string",
+            default = function ()
+                if host_machine() == "arm64/aarch64c" then
+                    return "GENERIC-MORELLO"
+                end
+            end,
         },
         kernel_modules = {
             description = "A list of kernel modules to build, all are built by default",
