@@ -1405,7 +1405,18 @@ function Task:run(ctx)
 
     local params = {}
     for k, v in pairs(self.parameters) do
-        params[k] = v:value()
+        if self[k] then
+            -- A hack that lets the parent task set parameters directly.  This
+            -- is used by openzfs-test-suite-vm-image to set sysdir, for
+            -- instance.
+            --
+            -- We should consider a convention for such parameters, maybe their
+            -- names start with an underscore, some kind of signal that the
+            -- user shouldn't be setting them directly.
+            params[k] = self[k]
+        else
+            params[k] = v:value()
+        end
     end
     for k, v in pairs(self.inputs) do
         assert(params[k] == nil)
