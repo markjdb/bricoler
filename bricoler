@@ -2235,8 +2235,12 @@ Task{
             default = "",
         },
         ssh_users = {
-            description = "A list of users to create on the VM",
+            description = "A list of users to grant SSH access to the VM",
             valid = {"", "root"},  -- No support for adding users right now.
+            default = "",
+        },
+        sudo_users = {
+            description = "A list of users to grant sudo privileges, useful for tests",
             default = "",
         },
         swap_size = {
@@ -2329,6 +2333,16 @@ Task{
                 self.filesystem == "ufs" and "/dev/gpt/rootfs / ufs rw 1 1" or "",
                 "/dev/gpt/swap none swap sw 0 0")
             conffile("/firstboot")
+        end
+
+        -- Add sudoers files.
+        do
+            for user in self.sudo_users:gmatch("%S+") do
+                local file = "usr/local/etc/sudoers.d/" .. user
+                local sudoers = stagedir .. "/" .. file
+                writefile(sudoers, user .. " ALL=(ALL) NOPASSWD: ALL")
+                mtree:add("./" .. file)
+            end
         end
 
         -- Create a local pkg repository.  The idea here is to fetch all of the
