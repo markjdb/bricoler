@@ -2986,9 +2986,17 @@ Task{
         kmod_stagedir = "string",
     },
     parameters = {
+        clean = {
+            description = "Clean the build directory before building",
+            default = false,
+        },
         configure_args = {
             description = "Extra arguments to pass to configure",
             type = "string",
+        },
+        sysdir = {
+            description = "Path to FreeBSD kernel sources that we're compiling against",
+            default = "/usr/src/sys",
         },
     },
 
@@ -3009,7 +3017,6 @@ Task{
             local configure_args = {
                 "./configure",
                 "MAKE=gmake",
-                "--prefix=" .. self.user_stagedir,
                 "--with-config=user",
             }
             if self.configure_args then
@@ -3019,13 +3026,22 @@ Task{
             end
             exec(table.unpack(configure_args))
         end
+        if self.clean then
+            exec("gmake", "clean")
+        end
         exec("gmake", "-j", ctx.maxjobs, "-s")
-        exec("gmake", "install")
+        exec("gmake", "install", "DESTDIR=" .. self.user_stagedir)
 
         -- Now build the kernel module.
         self.kmod_stagedir = cwd .. "/install-kmod"
+        mkdir(self.kmod_stagedir)
         cd("module")
-        exec("make", "-j", ctx.maxjobs, "-s", "-f", "./Makefile.bsd", "CC=cc")
+        if self.clean then
+            exec("make", "-f", "./Makefile.bsd", "clean")
+        end
+        exec("make", "-j", ctx.maxjobs, "-s", "-f", "./Makefile.bsd",
+             "CC=cc",
+             "SYSDIR=" .. self.sysdir)
         -- Here we set WITHOUT_DEBUG_FILES to prevent Makefile.bsd from running
         -- mtree.  It has no other effect for FreeBSD kernel modules.
         exec("make", "-s", "-f", "./Makefile.bsd",
@@ -3043,6 +3059,7 @@ Task{"freebsd-src-vm-image",
     name = "openzfs-test-suite-vm-image",
     description = "Build a VM image set up to run the OpenZFS test suite",
     inputs = {
+        freebsd_src = "freebsd-src",
         freebsd_build = {"freebsd-src-build",
             make_arguments = "WITHOUT_ZFS= WITHOUT_TOOLCHAIN=",
         },
@@ -3052,6 +3069,9 @@ Task{"freebsd-src-vm-image",
         filesystem = {
             default = "ufs",
         },
+        image_size = {
+            default = "30g"
+        },
         packages = {
             default = "libunwind sudo",
         },
@@ -3059,19 +3079,24 @@ Task{"freebsd-src-vm-image",
             -- It's useful to be able to log in to have a look around.
             default = "root",
         },
+        sudo_users = {
+            default = "tests",
+        },
     },
 
     run = function(self, ctx)
+        self.freebsd_src = self.freebsd_src:run(ctx)
         self.freebsd_build = self.freebsd_build:run(ctx)
 
         do
+            self.openzfs_build.sysdir = self.freebsd_src.path .. "/sys"
             self.openzfs_build = self.openzfs_build:run(ctx)
 
             local stagedir = self.freebsd_build.stagedir
 
             -- Stage the user bits under /usr/local in the FreeBSD image.
             local ext = "usr/local"
-            local src = self.openzfs_build.user_stagedir
+            local src = self.openzfs_build.user_stagedir .. "/" .. ext
             local dst = stagedir .. "/" .. ext
             exec("rm", "-rf", dst)
             makepath(stagedir .. "/" .. libgen.dirname(ext))
@@ -3079,11 +3104,11 @@ Task{"freebsd-src-vm-image",
             local mtree = self.freebsd_build.metalog
             mtree:stage("openzfs.mtree", stagedir, "./" .. ext)
 
-            exec("cp", self.openzfs_build.kmod_stagedir .. "/openzfs.ko",
-                       stagedir .. "/boot/kernel")
+            exec("cp", "-f", self.openzfs_build.kmod_stagedir .. "/openzfs.ko",
+                             stagedir .. "/boot/kernel")
             mtree:add("./boot/kernel/openzfs.ko")
-            exec("cp", self.openzfs_build.kmod_stagedir .. "/openzfs.ko.debug",
-                       stagedir .. "/usr/lib/debug/boot/kernel/")
+            exec("cp", "-f", self.openzfs_build.kmod_stagedir .. "/openzfs.ko.debug",
+                             stagedir .. "/usr/lib/debug/boot/kernel/")
             mtree:add("./usr/lib/debug/boot/kernel/openzfs.ko.debug")
         end
 
@@ -3095,6 +3120,11 @@ Task{"freebsd-vm-boot",
     name = "openzfs-test-suite",
     description = "Run the OpenZFS test suite inside a VM",
     parameters = {
+        interactive = {
+            -- Overriding this prevents the test from running automatically,
+            -- but that can nonetheless be useful when debugging.
+            default = false
+        },
         ncpus = {
             default = 4,
         },
@@ -3108,6 +3138,9 @@ Task{"freebsd-vm-boot",
 
     run = function(self, ctx)
         self:super(ctx)
+
+        self.VM:consrun(sprintf("su -m tests -c /usr/local/share/zfs/zfs-tests.sh"),
+                        10 * 24 * 60 * 60)
     end,
 }
 
