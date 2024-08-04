@@ -1995,6 +1995,7 @@ debug mode.
     --dependencies = {"libslirp"},
 
     inputs = {
+        syzkaller_src = "syzkaller-src",
         syzkaller_build = "syzkaller-build",
         freebsd_src = "freebsd-src",
         freebsd_build = {"freebsd-src-build",
@@ -2085,6 +2086,7 @@ debug mode.
             end
         end
 
+        self.syzkaller_src = self.syzkaller_src:run(ctx)
         self.syzkaller_build = self.syzkaller_build:run(ctx)
 
         -- Set up the kernel configuration file needed to build a kernel with
@@ -2165,7 +2167,7 @@ options 	KCOV
                          self.freebsd_build.objdir, self.freebsd_src.path,
                          machine, machine_arch),
     sshkey = self.vm_image.ssh_key_directory .. "/id_ed25519_root",
-    syzkaller_path = self.syzkaller_build.bindir .. "/..",
+    syzkaller_path = self.syzkaller_src.path,
     workdir = workdir,
     vm_count = self.vm_count,
     vm_memory = self.vm_memory,
