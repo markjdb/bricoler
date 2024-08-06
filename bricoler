@@ -2987,7 +2987,7 @@ Task{
     },
     parameters = {
         clean = {
-            description = "Clean the build directory before building",
+            description = "Clean the build directory and reconfigure before building",
             default = false,
         },
         configure_args = {
@@ -3013,7 +3013,10 @@ Task{
         if not isfile("./configure") then
             exec("./autogen.sh")
         end
-        do
+        if self.clean or not isfile("./Makefile") then
+            if isfile("./Makefile") then
+                exec("gmake", "clean")
+            end
             local configure_args = {
                 "./configure",
                 "MAKE=gmake",
@@ -3025,9 +3028,6 @@ Task{
                 end
             end
             exec(table.unpack(configure_args))
-        end
-        if self.clean then
-            exec("gmake", "clean")
         end
         exec("gmake", "-j", ctx.maxjobs, "-s")
         exec("gmake", "install", "DESTDIR=" .. self.user_stagedir)
@@ -3073,7 +3073,7 @@ Task{"freebsd-src-vm-image",
             default = "30g"
         },
         packages = {
-            default = "libunwind sudo",
+            default = "libunwind pamtester sudo",
         },
         ssh_users = {
             -- It's useful to be able to log in to have a look around.
@@ -3131,16 +3131,34 @@ Task{"freebsd-vm-boot",
         memory = {
             default = 16 * 1024,
         },
+        tests = {
+            description = "A comma-separated list of tags corresponding to tests to run",
+            type = "string",
+        },
     },
     inputs = {
         vm_image = "openzfs-test-suite-vm-image",
     },
 
     run = function(self, ctx)
+        -- Add some extra disks for the ZFS tests.
+        exec("truncate", "-s", "50g", "./disk1")
+        exec("truncate", "-s", "50g", "./disk2")
+        exec("truncate", "-s", "50g", "./disk3")
+        self.disk_list = "./disk1 ./disk2 ./disk3"
+
+        -- Boot the VM and log in.
         self:super(ctx)
 
-        self.VM:consrun(sprintf("su -m tests -c /usr/local/share/zfs/zfs-tests.sh"),
-                        10 * 24 * 60 * 60)
+        do
+            local cmd = "/usr/local/share/zfs/zfs-tests.sh -v"
+            if self.tests then
+                cmd = cmd .. " -T " .. self.tests
+            end
+            local disks = "vtbd1 vtbd2 vtbd3"
+            self.VM:consrun(sprintf("DISKS=\"%s\" su -m tests -c \"%s\"", disks, cmd),
+                            10 * 24 * 60 * 60)
+        end
     end,
 }
 
