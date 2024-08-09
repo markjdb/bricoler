@@ -2354,9 +2354,9 @@ Task{
                                    self.src.FreeBSD_version:sub(1, 2),
                                    self.build.machine_tuple:match("^%w+/(%w+)"))
 
-            local pkgdir = stagedir .. "/tmp/pkg"
-            mkdir(pkgdir)
-            writefile(pkgdir .. "/repo.conf", substitute([[
+            local repodir = stagedir .. "/tmp/pkg"
+            mkdir(repodir)
+            writefile(repodir .. "/repo.conf", substitute([[
 FreeBSD: {
     url: "pkg+http://pkg.FreeBSD.org/$ABI/latest",
     mirror_type: "srv",
@@ -2397,27 +2397,30 @@ FreeBSD: {
                 cd(oldcwd)
             end
 
-            pkgcmd("update")
-            pkgcmd("fetch", "--dependencies", "-o", "./root/bootstrap", "pkg")
-            pkgcmd("fetch", "--dependencies", "-o", "./root/pkg", table.unpack(pkgs))
-            pkgcmd("repo", "./root/pkg")
-            mtree:stage("pkg.mtree", stagedir, "./root/pkg")
-            mtree:stage("pkg-bootstrap.mtree", stagedir, "./root/bootstrap")
+            local bootstrapdir = "root/bootstrap/" .. pkgabi
+            local pkgdir = "root/pkg/" .. pkgabi
 
-            writefile(stagedir .. "/etc/pkg/local.conf", [[
+            pkgcmd("update")
+            pkgcmd("fetch", "--dependencies", "-o", "./" .. bootstrapdir, "pkg")
+            pkgcmd("fetch", "--dependencies", "-o", "./" .. pkgdir, table.unpack(pkgs))
+            pkgcmd("repo", "./" .. pkgdir)
+            mtree:stage("pkg.mtree", stagedir, "./" .. pkgdir)
+            mtree:stage("pkg-bootstrap.mtree", stagedir, "./" .. bootstrapdir)
+
+            writefile(stagedir .. "/etc/pkg/local.conf", sprintf([[
 local: {
-    url: "file:///root/pkg"
+    url: "file:///%s"
 }
-]])
+]], pkgdir))
             mtree:add("./etc/pkg/local.conf")
 
-            writefile(stagedir .. "/etc/rc.local", [[
+            writefile(stagedir .. "/etc/rc.local", sprintf([[
 if [ -f /firstboot ]; then
     export PATH=${PATH}:/usr/local/sbin:/usr/local/bin
     echo ""
     echo "bricoler: Running first-boot setup"
     # Older version of pkg(7) don't use basename().
-    cd /root/bootstrap/All
+    cd /%s/All
     # Install pkg(8).
     pkg add *
     # Install all the packages we fetched above.
@@ -2428,7 +2431,7 @@ if [ -f /firstboot ]; then
         pkg install -y -r local -g '*'
     fi
 fi
-]])
+]], bootstrapdir))
             mtree:add("./etc/rc.local")
 
             ::pkgdone::
