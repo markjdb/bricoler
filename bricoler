@@ -2658,7 +2658,7 @@ Task{"freebsd-src-vm-image",
         },
         rc_kld_list = {
             default = "accf_data accf_dns accf_http accf_tls " ..
-                      "carp cryptodev ctl dummynet " ..
+                      "carp cryptodev ctl dummynet fusefs " ..
                       "if_bridge if_epair if_ovpn if_stf " ..
                       "ipdivert ipfw ipfw ipfw_nat ipl ipsec " ..
                       "mac_bsdextended mqueuefs " ..
