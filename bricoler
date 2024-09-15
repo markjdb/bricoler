@@ -2357,6 +2357,7 @@ Task{
                 table.unpack(rc_klds))
             conffile("/etc/fstab",
                 self.filesystem == "ufs" and "/dev/gpt/rootfs / ufs rw 1 1" or "",
+                "none /dev/fd fdescfs rw 0 0",
                 "/dev/gpt/swap none swap sw 0 0")
             conffile("/firstboot")
         end
