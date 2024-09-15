@@ -3042,7 +3042,7 @@ Task{
         mkdir(self.user_stagedir)
 
         cd(self.src.path)
-        if not isfile("./configure") then
+        if self.clean or not isfile("./configure") then
             exec("./autogen.sh")
         end
         if self.clean or not isfile("./Makefile") then
