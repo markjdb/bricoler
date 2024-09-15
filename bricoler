@@ -2026,6 +2026,10 @@ debug mode.
             default = "amd64",
             valid = {"amd64", "arm64", "riscv"},
         },
+        verbosity = {
+            description = "Verbosity level to pass to syz-manager",
+            default = 0,
+        },
         vm_count = {
             description = "The number of VMs to run",
             default = 1,
@@ -2181,6 +2185,8 @@ options 	KCOV
             if self.debug then
                 table.insert(syz_manager_args, "-debug")
             end
+            table.insert(syz_manager_args, "-vv")
+            table.insert(syz_manager_args, self.verbosity)
 
             if self.hypervisor == "qemu" then
                 exec(table.unpack(syz_manager_args))
