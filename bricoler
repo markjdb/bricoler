@@ -2675,7 +2675,7 @@ Task{"freebsd-src-vm-image",
             -- Speed up the build a bit by removing expensive things we don't
             -- need.
             make_arguments = "WITHOUT_CLANG= WITHOUT_LLD= WITHOUT_LLDB= " ..
-                             "WITHOUT_LIB32=",
+                             "WITHOUT_LIB32= WITHOUT_LIB64= WITHOUT_ZFS_TESTS=",
         },
     },
     parameters = {
