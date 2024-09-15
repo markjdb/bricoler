@@ -710,6 +710,8 @@ local VMRun = Class({
     memory = "number",
     -- The number of CPUs to allocate to the VM.
     ncpus = "number",
+    -- The NIC driver to use.
+    nic_driver = "string",
     -- A list of <share>:<path> pairs to mount with 9pfs.
     p9fs_shares = "string",
     -- TAP interfaces to open in the VM.
@@ -718,6 +720,8 @@ local VMRun = Class({
     ssh_addr = function (v) return v:match("^[^:]+:%d+$") end,
     -- The addr:port on which to listen for gdb connections.
     gdb_addr = function (v) return v:match("^[^:]+:%d+$") end,
+    -- The name of the VM.
+    vmname = "string",
 })
 
 -- Provide a standard set of parameters for tasks which start a VM.
@@ -761,6 +765,11 @@ function VMRun.task_parameters()
             description = "Number of virtual CPUs to allocate to the VM",
             type = "number",
         },
+        nic_driver = {
+            description = "The device model to use for the NIC",
+            valid = {"virtio", "e1000"},
+            default = "virtio",
+        },
         p9fs_shares = {
             description = "A list of <share>:<path> pairs to mount with 9pfs",
             default = "",
@@ -768,6 +777,10 @@ function VMRun.task_parameters()
         tap_list = {
             description = "TAP interfaces to open",
             default = "",
+        },
+        vmname = {
+            description = "Name of the VM (relevant for bhyve only)",
+            default = "bricoler",
         },
     }
 end
@@ -867,8 +880,6 @@ function BhyveRun:_ctor()
         end
     end
 
-    local vmname = "bricoler"
-
     -- Build up the command-line arguments for bhyve.
     local bhyveargs = {}
     do
@@ -877,6 +888,15 @@ function BhyveRun:_ctor()
             local dev = sprintf("%d:0,%s", devindex, desc)
             table.append(bhyveargs, "-s", dev)
             devindex = devindex + 1
+        end
+
+        local nic
+        if self.nic_driver == "virtio" then
+            nic = "virtio-net"
+        elseif self.nic_driver == "e1000" then
+            nic = "e1000"
+        else
+            errx("Unsupported NIC driver %s", self.nic_driver)
         end
 
         table.append(bhyveargs,
@@ -909,10 +929,10 @@ function BhyveRun:_ctor()
         if self.ssh_addr then
             -- This must be added after the first block device to work around a
             -- bhyve bug on arm64, see https://reviews.freebsd.org/D45049.
-            adddev(sprintf("virtio-net,slirp,hostfwd=tcp:%s-:22", self.ssh_addr))
+            adddev(sprintf("%s,slirp,hostfwd=tcp:%s-:22", nic, self.ssh_addr))
         end
         for tap in self.tap_list:gmatch("%S+") do
-            adddev("virtio-net," .. tap)
+            adddev(nic .. "," .. tap)
         end
         for p9fs_share in self.p9fs_shares:gmatch("%S+") do
             local share, path = p9fs_share:match("([^:]+):(.+)")
@@ -922,10 +942,10 @@ function BhyveRun:_ctor()
             adddev(sprintf("virtio-9p,%s=%s", share, path))
         end
 
-        table.append(bhyveargs, vmname)
+        table.append(bhyveargs, self.vmname)
     end
 
-    self.name = vmname
+    self.name = self.vmname
     self.runargs = bhyveargs
 end
 
