@@ -2440,7 +2440,8 @@ FreeBSD: {
 
             writefile(stagedir .. "/etc/pkg/local.conf", sprintf([[
 local: {
-    url: "file:///%s"
+    url: "file:///%s",
+    signature_type: "none"
 }
 ]], pkgdir))
             mtree:add("./etc/pkg/local.conf")
@@ -2453,7 +2454,7 @@ if [ -f /firstboot ]; then
     # Older version of pkg(7) don't use basename().
     cd /%s/All
     # Install pkg(8).
-    pkg add *
+    pkg add -r local *
     # Install all the packages we fetched above.
     pkg install -y -r local -g '*'
     if [ $? -ne 0 ]; then
