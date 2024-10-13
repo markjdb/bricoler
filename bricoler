@@ -2357,6 +2357,7 @@ Task{
                 "defaultroute_delay=2",
                 "growfs_enable=YES",
                 "sshd_enable=YES",
+                "sshd_rsa_enable=NO",       -- Obsolete and slow to generate.
                 self.filesystem == "zfs" and "zfs_enable=YES" or "",
                 table.unpack(rc_klds))
             conffile("/etc/fstab",
