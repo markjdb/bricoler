@@ -2252,6 +2252,10 @@ Task{
             description = "A set of loader tunables to set prior to boot",
             default = "",
         },
+        overlay = {
+            description = "A directory to overlay on the VM image",
+            type = "string"
+        },
         packages = {
             description = "A list of packages to install on the VM upon first boot",
             default = "",
@@ -2462,6 +2466,11 @@ fi
             mtree:add("./etc/rc.local")
 
             ::pkgdone::
+        end
+
+        if self.overlay then
+            exec("cp", "-R", self.overlay .. "/", stagedir)
+            mtree:stage("overlay.mtree", self.overlay, "")
         end
 
         local machine, machine_arch = self.build.machine_tuple:match("^(%w+)/(%w+)")
