@@ -2709,8 +2709,8 @@ Task{"freebsd-src-vm-image",
             default = "30g"
         },
         packages = {
-            default = "coreutils python devel/py-pytest net/scapy perl5 jq ksh93 " ..
-                      "llvm gtar isc-dhcp44-server openvpn sg3_utils sudo nist-kat git-lite"
+            default = "coreutils python python3 devel/py-pytest net/scapy perl5 jq ksh93 " ..
+                      "llvm gtar isc-dhcp44-server openvpn sg3_utils sudo ndisc6 nist-kat git-lite"
         },
         ssh_users = {
             -- It's useful to be able to log in to have a look around.
@@ -3117,7 +3117,7 @@ Task{"freebsd-src-vm-image",
             default = "30g"
         },
         packages = {
-            default = "libunwind pamtester sudo",
+            default = "bash libunwind pamtester sudo",
         },
         ssh_users = {
             -- It's useful to be able to log in to have a look around.
