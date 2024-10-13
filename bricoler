@@ -2360,6 +2360,7 @@ Task{
                 "sshd_enable=YES",
                 "sshd_rsa_enable=NO",       -- Obsolete and slow to generate.
                 self.filesystem == "zfs" and "zfs_enable=YES" or "",
+                self.filesystem == "zfs" and "zpool_reguid=zroot" or "",
                 table.unpack(rc_klds))
             conffile("/etc/fstab",
                 self.filesystem == "ufs" and "/dev/gpt/rootfs / ufs rw 1 1" or "",
