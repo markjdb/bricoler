@@ -2347,6 +2347,7 @@ Task{
             conffile("/boot/loader.conf",
                 "autoboot_delay=1",
                 "console=comconsole",
+                "kern.geom.label.disk_ident.enable=0", -- Work around swap partition issues.
                 "virtio_p9fs_load=YES",
                 self.filesystem == "zfs" and "zfs_load=YES" or "",
                 table.unpack(loader_conf_entries))
