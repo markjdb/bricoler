@@ -692,6 +692,8 @@ end
 local VMRun = Class({
     vm = {},
 }, {
+    -- The block device driver to use.
+    block_driver = "string",
     -- Name of the CPU to emulate.
     cpu = "string",
     -- A list of extra files to add as disks.
@@ -733,6 +735,11 @@ function VMRun.task_parameters()
         bios = {
             description = "Path to the firmware image to use",
             type = "string",
+        },
+        block_driver = {
+            description = "The block device driver to use",
+            valid = {"virtio", "ahci", "nvme"},
+            default = "virtio",
         },
         cpu = {
             -- This parameter is really only defined for QEMU.
@@ -914,9 +921,20 @@ function BhyveRun:_ctor()
             table.append(bhyveargs, "-o", "console=stdio")
             table.append(bhyveargs, "-o", "bootrom=" .. bootrom)
         end
-        adddev("virtio-blk," .. self.image)
+
+        local block
+        if self.block_driver == "virtio" then
+            block = "virtio-blk"
+        elseif self.block_driver == "ahci" then
+            block = "ahci-hd"
+        elseif self.block_driver == "nvme" then
+            block = "nvme"
+        else
+            errx("Unsupported block driver %s", self.block_driver)
+        end
+        adddev(block .. "," .. self.image)
         for disk in self.disk_list:gmatch("%S+") do
-            adddev("virtio-blk," .. disk)
+            adddev(block .. "," .. disk)
         end
         if not self.machine_tuple:match("^arm64/.*$") then
             -- Work around a bhyve bug/limitation on arm64.
@@ -1056,6 +1074,12 @@ function QEMURun:_ctor(args)
 
     -- Build up the QEMU command-line arguments based on our parameters.
     do
+        if self.nic_driver ~= "virtio" then
+            errx("Unsupported NIC driver %s", self.nic_driver)
+        end
+        if self.block_driver ~= "virtio" then
+            errx("Unsupported block driver %s", self.block_driver)
+        end
         local bios, cpu, kernel, machine = self:_bios(), self:_cpu(), self:_kernel(), self:_machine()
         local qemuargs = {}
         table.append(qemuargs,
@@ -2792,12 +2816,28 @@ the VM is shut down.
     },
 
     run = function(self, ctx)
+        local ndisks = 4
+        local disk_dev_list = ""
+
         -- Add some extra disks for the ZFS tests.
-        exec("truncate", "-s", "50g", "./disk1")
-        exec("truncate", "-s", "50g", "./disk2")
-        exec("truncate", "-s", "50g", "./disk3")
-        exec("truncate", "-s", "50g", "./disk4")
-        self.disk_list = "./disk1 ./disk2 ./disk3 ./disk4"
+        for i = 1, ndisks do
+            local disk = sprintf("./disk%d", i)
+            exec("truncate", "-s", "50g", disk)
+            self.disk_list = self.disk_list .. " " .. disk
+
+            local disk_dev
+            if self.block_driver == "virtio" then
+                disk_dev = "vtbd"
+            elseif self.block_driver == "ahci" then
+                disk_dev = "ada"
+            elseif self.block_driver == "nvme" then
+                disk_dev = "nda"
+            else
+                errx("Unknown block driver %s", self.block_driver)
+            end
+
+            disk_dev_list = disk_dev_list .. " " .. sprintf("/dev/%s%d", disk_dev, i)
+        end
 
         -- Boot the VM and log in.
         self:super(ctx)
@@ -2807,7 +2847,10 @@ the VM is shut down.
             local kyuavars = {
                 "-v", "parallelism=" .. (self.parallelism or self.ncpus),
                 "-v", "test_suites.FreeBSD.allow_sysctl_side_effects=1",
-                "-v", "test_suites.FreeBSD.disks=\"/dev/vtbd1 /dev/vtbd2 /dev/vtbd3 /dev/vtbd4\"",
+                "-v", "test_suites.FreeBSD.disks=\"" .. disk_dev_list .. "\"",
+                "-v", "test_suites.FreeBSD.fibs=\"1 2 3 4 5 6 7\"",
+                "--logfile", "/root/kyua.log",
+                "--loglevel", "info",
             }
             local kyuacmd = "kyua " ..  table.concat(kyuavars, " ") .. " " ..
                             "test " .. "-k /usr/tests/Kyuafile -r /root/kyua.db " ..
@@ -2822,6 +2865,7 @@ the VM is shut down.
             local sshkey = self.vm_image.ssh_key_directory .. "/id_ed25519_root"
             self.VM:scpfrom("root", sshkey, "/root/kyua.db", "./kyua.db")
             self.VM:scpfrom("root", sshkey, "/root/kyua_report.txt", "./kyua_report.txt")
+            self.VM:scpfrom("root", sshkey, "/root/kyua.log", "./kyua.log")
         end
     end,
 
