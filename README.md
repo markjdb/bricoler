@@ -18,7 +18,7 @@ $ bricoler run freebsd-src-regression-suite-run -p freebsd-src:url=/path/to/clon
 Add "--show" to list the available parameters.  Run "bricoler run" without any
 other arguments to list available tasks.
 
-== Compatibility ==
+## Compatibility
 
 This project only runs on FreeBSD.  It is written in Lua as part of an experiment
 to try and build up a set of libraries exposing low-level interfaces in FreeBSD,
@@ -27,20 +27,22 @@ pf, jails, bhyve, ZFS, etc..  This makes cross-platform support difficult.  If
 it becomes tempting to run bricoler on other platforms, a rewrite in Python or
 similar would likely be necessary.
 
-== Building ==
+## Building
 
 It requires Lua 5.4 and cmake.
 
 To build it, run "make" from the root directory.
 
-== FreeBSD regression suite quickstart ==
+## FreeBSD regression suite quickstart
 
 On FreeBSD main, run the following:
 
+```
 $ git clone https://github.com/markjdb/bricoler
 $ cd bricoler && make
+```
 
-If you run bash, try sourcing bricoler/bricoler-completion.bash.
+If you run bash, try sourcing `bricoler-completion.bash`.
 It auto-completes parameter names; I find it very very useful.
 
 Then cd to the src dir you want to build and run the command below.
