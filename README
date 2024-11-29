@@ -11,7 +11,9 @@ framework to wrap operations like:
 For example, to run the FreeBSD regression test suite against an existing clone
 of the FreeBSD src tree, run:
 
-  $ bricoler run freebsd-src-regression-suite-run -p freebsd-src:url=/path/to/clone
+```
+$ bricoler run freebsd-src-regression-suite-run -p freebsd-src:url=/path/to/clone
+```
 
 Add "--show" to list the available parameters.  Run "bricoler run" without any
 other arguments to list available tasks.
@@ -30,3 +32,30 @@ similar would likely be necessary.
 It requires Lua 5.4 and cmake.
 
 To build it, run "make" from the root directory.
+
+== FreeBSD regression suite quickstart ==
+
+On FreeBSD main, run the following:
+
+$ git clone https://github.com/markjdb/bricoler
+$ cd bricoler && make
+
+If you run bash, try sourcing bricoler/bricoler-completion.bash.
+It auto-completes parameter names; I find it very very useful.
+
+Then cd to the src dir you want to build and run the command below.
+It assumes you are testing `main`, and that QEMU is installed.
+
+```
+$ cd /usr/src
+$ bricoler run freebsd-src-regression-suite --param freebsd-src:url=$(pwd) --param freebsd-src:branch=main
+```
+
+Add `--show` to the end of that invocation to see all of the possible parameters.
+For example, you can add `--param freebsd-src-build:clean=true` to request a clean build.
+
+Once the regression suite finishes, you can look at the results with:
+
+```
+$ bricoler run freebsd-src-regression-suite report
+```
