@@ -2247,7 +2247,7 @@ Task{
     inputs = {
         src = "freebsd-src",
         build = {"freebsd-src-build",
-            make_targets = "buildworld buildkernel installworld distribution installkernel",
+            make_targets = "buildworld buildkernel distribution installworld installkernel",
         },
     },
     outputs = {
