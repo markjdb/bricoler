@@ -2690,10 +2690,11 @@ Task{
             local val = f:read("*l")
             f:close()
 
+            local sysroot = pwd() .. "/sysroot"
             local addr, port = val:match("^(.*):(%d+)$")
             exec(gdb,
-                 "-ex", "set sysroot ./sysroot",
-                 "-ex", "file ./sysroot/boot/kernel/kernel",
+                 "-ex", sprintf("set sysroot %s", sysroot),
+                 "-ex", sprintf("file %s/boot/kernel/kernel", sysroot),
                  "-ex", "target remote " .. addr .. ":" .. port)
         end,
 
@@ -2707,7 +2708,7 @@ Task{
             exec("ssh",
                  "-o", "StrictHostKeyChecking=no",
                  "-o", "UserKnownHostsFile=/dev/null",
-                 "-i", "./ssh-keys/id_ed25519_root",
+                 "-i", pwd() .. "/ssh-keys/id_ed25519_root",
                  "-p", port,
                  "root@" .. addr)
         end,
