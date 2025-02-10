@@ -2747,7 +2747,8 @@ Task{"freebsd-src-vm-image",
         packages = {
             default = "coreutils python python3 devel/py-pytest net/scapy " ..
                       "perl5 jq ksh93 llvm gtar isc-dhcp44-server openvpn " ..
-                      "sg3_utils sudo ndisc6 nmap nist-kat git-lite"
+                      "sg3_utils sudo ndisc6 nmap nist-kat git-lite " ..
+                      "devel/py-twisted porch gdb"
         },
         ssh_users = {
             -- It's useful to be able to log in to have a look around.
@@ -2858,7 +2859,8 @@ the VM is shut down.
                 "-v", "parallelism=" .. (self.parallelism or self.ncpus),
                 "-v", "test_suites.FreeBSD.allow_sysctl_side_effects=1",
                 "-v", "test_suites.FreeBSD.disks=\"" .. disk_dev_list .. "\"",
-                "-v", "test_suites.FreeBSD.fibs=\"1 2 3 4 5 6 7\"",
+                "-v", "test_suites.FreeBSD.fibs=\"0 1 2 3 4 5 6 7\"",
+                "-v", "test_suites.FreeBSD.unprivileged_user=tests",
                 "--logfile", "/root/kyua.log",
                 "--loglevel", "info",
             }
