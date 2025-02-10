@@ -2729,7 +2729,6 @@ Task{"freebsd-src-vm-image",
     parameters = {
         loader_tunables = {
             default = "net.inet.ip.fw.default_to_accept=1 " ..
-                      "vfs.zfs.reference_tracking_enable=1 " ..
                       "net.fibs=8",
         },
         rc_kld_list = {
