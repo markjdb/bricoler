@@ -1036,9 +1036,6 @@ function QEMURun:_cpu()
     end
     if self.machine_tuple == "arm64/aarch64c" then
         return "morello"
-    elseif self.machine_tuple == "riscv/riscv64" then
-        -- u-boot panics with "-cpu max", needs investigation.
-        return "any"
     else
         return "max"
     end
