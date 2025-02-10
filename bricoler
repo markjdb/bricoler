@@ -390,6 +390,13 @@ local function runcmd(p, ...)
     return pollfds[1].buf, pollfds[2].buf
 end
 
+local function cdruncmd(path, p, ...)
+    local oldcwd = cd(path)
+    local stdout, stderr = runcmd(p, ...)
+    cd(oldcwd)
+    return stdout, stderr
+end
+
 -- Find an unused v4 TCP port that we can listen on.
 local function unused_tcp_port(addr)
     local s = _socket.socket(_socket.PF_INET, _socket.SOCK_STREAM, 0)
@@ -2431,9 +2438,8 @@ FreeBSD: {
                 goto pkgdone
             end
 
-            -- Run a pkg command in the staging directory.
-            local function pkgcmd(...)
-                local oldcwd = cd(stagedir)
+            -- Return the argv of a pkg command.
+            local function _pkgcmd(...)
                 local pkgcmd_prefix = {
                     "pkg",
                     "-o", "ASSUME_ALWAYS_YES=true",
@@ -2442,18 +2448,25 @@ FreeBSD: {
                     "-o", "PKG_CACHEDIR=./var/cache/pkg",
                     "-o", "REPOS_DIR=./tmp/pkg",
                     "-o", "PKG_DBDIR=./var/db/pkg",
-                    "-o", "IGNORE_OSVERSION=yes",
+                    "-o", "OSVERSION=" .. self.src.FreeBSD_version,
                 }
                 local t = table.deepcopy(pkgcmd_prefix)
                 for _, arg in ipairs({...}) do
                     table.insert(t, arg)
                 end
-                exec(table.unpack(t))
+                return t
+            end
+
+            -- Run a pkg command in the staging directory.
+            local function pkgcmd(...)
+                local oldcwd = cd(stagedir)
+                exec(table.unpack(_pkgcmd(...)))
                 cd(oldcwd)
             end
 
             local bootstrapdir = "root/bootstrap/" .. pkgabi
             local pkgdir = "root/pkg/" .. pkgabi
+            local pkgversion = cdruncmd(stagedir, table.unpack(_pkgcmd("rquery", "%v", "pkg")))
 
             pkgcmd("update")
             pkgcmd("fetch", "--dependencies", "-o", "./" .. bootstrapdir, "pkg")
@@ -2478,16 +2491,16 @@ if [ -f /firstboot ]; then
     # Older version of pkg(7) don't use basename().
     cd /%s/All
     # Install pkg(8).
-    pkg add -r local *
+    IGNORE_OSVERSION=yes pkg add -r local pkg-%s.*
     # Install all the packages we fetched above.
-    pkg install -y -r local -g '*'
+    IGNORE_OSVERSION=yes pkg install -y -r local -g '*'
     if [ $? -ne 0 ]; then
         # There is some pkg bug that requires us to run this twice.
         # Otherwise it'll fail when trying to update the upstream repo.
-        pkg install -y -r local -g '*'
+        IGNORE_OSVERSION=yes pkg install -y -r local -g '*'
     fi
 fi
-]], bootstrapdir))
+]], bootstrapdir, pkgversion:match("^%s*(.-)%s*$")))
             mtree:add("./etc/rc.local")
 
             ::pkgdone::
