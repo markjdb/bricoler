@@ -2827,6 +2827,10 @@ the VM is shut down.
             description = "The number of tests to run in parallel",
             type = "number",
         },
+        count = {
+            description = "Number of times to run the specified test(s)",
+            default = 1,
+        },
         tests = {
             description = "A list of tests to run, relative to /usr/tests",
             type = "string",
@@ -2872,10 +2876,15 @@ the VM is shut down.
                 "--logfile", "/root/kyua.log",
                 "--loglevel", "info",
             }
-            local kyuacmd = "kyua " ..  table.concat(kyuavars, " ") .. " " ..
-                            "test " .. "-k /usr/tests/Kyuafile -r /root/kyua.db " ..
-                            self.tests
-            self.VM:consrun(kyuacmd, 12 * 60 * 60)
+            local dbpath = "/root/kyua.db"
+            local kyuacmd = sprintf("kyua %s test -k /usr/tests/Kyuafile -r %s %s",
+                                    table.concat(kyuavars, " "), dbpath, self.tests)
+            for _ = 1, self.count do
+                -- XXX-MJ need to halt if a test fails
+                -- kyua refuses to overwrite its output database.
+                self.VM:consrun("rm -f /root/kyua.db")
+                self.VM:consrun(kyuacmd, 12 * 60 * 60)
+            end
             local reportcmd = "kyua report --verbose " ..
                               "--results-filter skipped,xfail,broken,failed " ..
                               "--output=/root/kyua_report.txt " ..
