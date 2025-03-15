@@ -1007,11 +1007,15 @@ function QEMURun:_binary()
     if not bin then
         errx("Unsupported machine type %s", self.machine_tuple)
     end
-    local path = which(bin)
-    if not path then
-        errx("QEMU is not in PATH, make sure it is installed")
+    if bin:match("^/") then
+        return bin
+    else
+        local path = which(bin)
+        if not path then
+            errx("QEMU is not in PATH, make sure it is installed")
+        end
+        return path
     end
-    return path
 end
 
 -- Return the path to the firmware image to use in the guest, and the FreeBSD
