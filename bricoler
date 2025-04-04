@@ -416,8 +416,8 @@ local function unused_tcp_port(addr)
             errx("Failed to resolve address")
         end
         local res = _socket.bind(s, t[1].addr)
-        close(s)
         if res then
+            close(s)
             return addr .. ":" .. rand
         end
     end
