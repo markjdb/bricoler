@@ -2466,7 +2466,6 @@ FreeBSD: {
 
             local bootstrapdir = "root/bootstrap/" .. pkgabi
             local pkgdir = "root/pkg/" .. pkgabi
-            local pkgversion = cdruncmd(stagedir, table.unpack(_pkgcmd("rquery", "%v", "pkg")))
 
             pkgcmd("update")
             pkgcmd("fetch", "--dependencies", "-o", "./" .. bootstrapdir, "pkg")
@@ -2475,6 +2474,7 @@ FreeBSD: {
             mtree:stage("pkg.mtree", stagedir, "./" .. pkgdir)
             mtree:stage("pkg-bootstrap.mtree", stagedir, "./" .. bootstrapdir)
 
+            local pkgversion = cdruncmd(stagedir, table.unpack(_pkgcmd("rquery", "%v", "pkg")))
             writefile(stagedir .. "/etc/pkg/local.conf", sprintf([[
 local: {
     url: "file:///%s",
