@@ -2630,6 +2630,10 @@ Task{"freebsd-src-vm-image",
             -- syzkaller uses ssh to install the fuzzer into VM instances.
             default = "root",
         },
+        rc_kld_list = {
+            default = "cryptodev filemon ipsec ng_bluetooth ng_btsocket " ..
+                      "ng_hci ng_l2cap pf",
+        },
     },
 }
 
