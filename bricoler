@@ -1975,7 +1975,7 @@ Task{"git-checkout",
 Task{
     name = "syzkaller-build",
     description = "Build syzkaller",
-    dependencies = {"bash", "gmake", "go"},
+    dependencies = {"bash", "gmake", "go", "gcc"},
     inputs = {
         src = "syzkaller-src",
     },
