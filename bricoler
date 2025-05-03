@@ -2268,6 +2268,10 @@ Task{
             default = "ufs",
             valid = {"ufs", "zfs"},
         },
+        fstab_entries = {
+            description = "A list of fstab entries to add to the VM image",
+            default = "",
+        },
         hostname = {
             description = "The hostname for the VM",
             default = "freebsd",
@@ -2374,6 +2378,10 @@ Task{
             for kld in self.rc_kld_list:gmatch("%S+") do
                 table.insert(rc_klds, "kld_list=\"${kld_list} " .. kld .. "\"")
             end
+            local fstab_entries = {}
+            for line in self.fstab_entries:gmatch("[^\n]+") do
+                table.insert(fstab_entries, line)
+            end
 
             local loader_conf_entries = table.append(loader_klds, table.unpack(loader_tunables))
             conffile("/boot/loader.conf",
@@ -2397,7 +2405,8 @@ Task{
             conffile("/etc/fstab",
                 self.filesystem == "ufs" and "/dev/gpt/rootfs / ufs rw 1 1" or "",
                 "none /dev/fd fdescfs rw 0 0",
-                "/dev/gpt/swap none swap sw 0 0")
+                "/dev/gpt/swap none swap sw 0 0",
+                table.unpack(fstab_entries))
             conffile("/firstboot")
         end
 
