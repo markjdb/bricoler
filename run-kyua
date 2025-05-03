@@ -1,0 +1,86 @@
+#!/bin/sh
+#
+# Copyright (c) 2025 Mark Johnston <markj@FreeBSD.org>
+#
+
+usage()
+{
+    cat <<__EOF__ >&2
+usage: $(basename $0) [-c <count>] [-j <parallelism>] [-r <report DB path>]
+                      [<test path>]
+
+Run the test suite in /usr/tests, optionally limited to tests under <test path>.
+This is a helper script copied into VM images by bricoler in order to run the
+test suite.
+
+Options:
+-c <count>         Run the test suite <count> times, stop if any failures occur
+                   default is 1.
+-d <disks>         Provide the specified disks as scratch space for tests.
+-j <parallelism>   Run up to <parallelism> tests in parallel, default is the
+                   number of CPUs in the system.
+-r <report DB path> Store the test results in the specified report DB, default
+                   is ./kyua.db.
+__EOF__
+}
+
+COUNT=1
+DISK_LIST=" "
+PARALLELISM=$(sysctl -n hw.ncpu)
+REPORT_DB=./kyua.db
+REPORT_LOG=./kyua-report.txt
+
+while getopts "c:d:j:o:r:" opt; do
+    case $opt in
+    c)
+        COUNT=$OPTARG
+        ;;
+    d)
+        DISK_LIST=$OPTARG
+        ;;
+    j)
+        PARALLELISM=$OPTARG
+        ;;
+    o)
+        REPORT_LOG=$OPTARG
+        ;;
+    r)
+        REPORT_DB=$OPTARG
+        ;;
+    *)
+        usage
+        exit 1
+        ;;
+    esac
+done
+shift $((OPTIND - 1))
+if [ $# -gt 1 ]; then
+    usage
+    exit 1
+fi
+TEST_PATH=$1
+
+FIBS=$(seq 0 $(($(sysctl -n net.fibs) - 1)))
+
+for i in $(jot $COUNT); do
+    # kyua refuses to overwrite its output database.
+    rm -f $REPORT_DB
+
+    kyua -v parallelism=$PARALLELISM \
+        -v test_suites.FreeBSD.unprivileged_user=tests \
+        -v test_suites.FreeBSD.allow_sysctl_side_effects=1 \
+        -v test_suites.FreeBSD.fibs="$FIBS" \
+        -v test_suites.FreeBSD.disks="$DISK_LIST" \
+        test -k /usr/tests/Kyuafile -r $REPORT_DB $TEST_PATH
+    status=$?
+
+    kyua report --verbose \
+        --results-filter skipped,xfail,broken,failed \
+        --output=$REPORT_LOG -r $REPORT_DB
+
+    if [ $status -ne 0 ]; then
+        exit $?
+    fi
+done
+
+exit 0
