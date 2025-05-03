@@ -1683,7 +1683,7 @@ Task{
                 if not _stat.S_ISDIR(sb.mode) then
                     errx("Path %s is not a directory", path)
                 end
-                if self.branch then
+                if self.branch and self.branch ~= "" then
                     local branch = GitRepository.checked_out_branch(path)
                     if branch ~= self.branch then
                         errx("Repository %s is on branch %s, not %s",
