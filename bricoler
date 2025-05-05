@@ -3286,6 +3286,8 @@ Task{"freebsd-vm-boot",
 
 -------------------------------- Main --------------------------------
 
+scriptdir = scriptdir:match("^/") and scriptdir or pwd() .. "/" .. scriptdir
+
 if _getuid.geteuid() == 0 then
     errx("bricoler must not be run as root")
 end
