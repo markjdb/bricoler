@@ -2888,7 +2888,7 @@ the VM is shut down.
                 "-j", self.parallelism or self.ncpus,
                 "-o", reportpath,
                 "-r", dbpath,
-                self.tests,
+                "\"" .. self.tests .. "\"",
             }
             local testcmd = sprintf("/root/run-kyua %s", table.concat(testparams, " "))
             self.VM:consrun(testcmd, 12 * 60 * 60)
