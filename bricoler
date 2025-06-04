@@ -2962,6 +2962,9 @@ Task{"freebsd-src-vm-image",
         symlink("/usr/local/bin/clang-cpp", stagedir .. "/usr/local/bin/cpp")
         mtree:add("./usr/local/bin/cpp")
 
+        exec("cp", "-f", scriptdir .. "/run-kyua", stagedir .. "/root")
+        mtree:add("./root/run-kyua")
+
         self:super(ctx)
     end,
 }
