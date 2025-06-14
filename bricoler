@@ -723,6 +723,8 @@ local VMRun = Class({
     nic_driver = "string",
     -- A list of <share>:<path> pairs to mount with 9pfs.
     p9fs_shares = "string",
+    -- Whether to restart the VM when it exits due to a reboot.
+    reboot = "boolean",
     -- TAP interfaces to open in the VM.
     tap_list = "string",
     -- The addr:port on which to listen for SSH connections.
@@ -787,6 +789,10 @@ function VMRun.task_parameters()
         p9fs_shares = {
             description = "A list of <share>:<path> pairs to mount with 9pfs",
             default = "",
+        },
+        reboot = {
+            description = "Restart the VM when it exits due to a reboot",
+            default = true,
         },
         tap_list = {
             description = "TAP interfaces to open",
@@ -977,7 +983,12 @@ end
 function BhyveRun:boot()
     _rootexec("bhyvectl", "--destroy", "--vm=" .. self.name)
     if self.interactive then
-        _rootexec(table.unpack(self.runargs))
+        while true do
+            local _, status, num = _rootexec(table.unpack(self.runargs))
+            if status ~= "exited" or num ~= 0 or not self.reboot then
+                break
+            end
+        end
     else
         table.prepend(self.runargs, "sudo")
         self.orch = orch_spawn(table.unpack(self.runargs))
@@ -1093,12 +1104,14 @@ function QEMURun:_ctor(args)
         table.append(qemuargs,
             self:_binary(),
             "-nographic",
-            "-no-reboot",
             "-smp", tostring(self.ncpus),
             "-m", tostring(self.memory) .. "M",
             "-cpu", cpu,
             "-M", machine,
             "-device", "virtio-rng-pci")
+        if not self.reboot then
+            table.append(qemuargs, "-no-reboot")
+        end
         if bios then
             if not access(bios[1], "r") then
                 errx("BIOS image %s is not available, install %s", bios[1], bios[2])
