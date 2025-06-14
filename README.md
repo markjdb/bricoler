@@ -56,8 +56,20 @@ $ bricoler run freebsd-src-regression-suite --param freebsd-src:url=$(pwd) --par
 Add `--show` to the end of that invocation to see all of the possible parameters.
 For example, you can add `--param freebsd-src-build:clean=true` to request a clean build.
 
-Once the regression suite finishes, you can look at the results with:
+Specific tests can be chosen with freebsd-src-regression-suite:tests:
 
 ```
+$ bricoler run freebsd-src-regression-suite -p "freebsd-src-regression-suite:tests=sys/netpfil/pf sbin/pfctl"
+```
+
+
+Once the regression suite finishes, you can look at the results with:
+```
 $ bricoler run freebsd-src-regression-suite report
+```
+
+If the guest panics it is possible to attach kgdb and interactively debug with:
+
+```
+$ bricoler run freebsd-src-regression-suite gdb
 ```
