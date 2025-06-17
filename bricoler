@@ -792,7 +792,7 @@ function VMRun.task_parameters()
         },
         reboot = {
             description = "Restart the VM when it exits due to a reboot",
-            default = true,
+            default = false,
         },
         tap_list = {
             description = "TAP interfaces to open",
