@@ -2510,7 +2510,13 @@ local: {
             mtree:add("./etc/pkg/local.conf")
 
             writefile(stagedir .. "/etc/rc.local", sprintf([[
-if [ -f /firstboot ]; then
+bricoler_add_pkgs()
+{
+    local -
+
+    set -x
+    set +f glob # Work around an rc bug that disables globbing.
+
     export PATH=${PATH}:/usr/local/sbin:/usr/local/bin
     echo ""
     echo "bricoler: Running first-boot setup"
@@ -2525,6 +2531,10 @@ if [ -f /firstboot ]; then
         # Otherwise it'll fail when trying to update the upstream repo.
         IGNORE_OSVERSION=yes pkg install -y -r local -g '*'
     fi
+}
+
+if [ -f /firstboot ]; then
+    bricoler_add_pkgs
 fi
 ]], bootstrapdir, pkgversion:match("^%s*(.-)%s*$")))
             mtree:add("./etc/rc.local")
