@@ -2285,6 +2285,10 @@ Task{
             description = "A list of fstab entries to add to the VM image",
             default = "",
         },
+        fstab_file = {
+            description = "A file containing fstab entries to add to the VM image",
+            default = "",
+        },
         hostname = {
             description = "The hostname for the VM",
             default = "freebsd",
@@ -2394,6 +2398,15 @@ Task{
             local fstab_entries = {}
             for line in self.fstab_entries:gmatch("[^\n]+") do
                 table.insert(fstab_entries, line)
+            end
+            if self.fstab_file ~= "" then
+                local fstabfile = self.fstab_file
+                local f = io.open_checked(fstabfile, "r")
+                for line in f:lines() do
+                    if line:match("%S") then
+                        table.insert(fstab_entries, line)
+                    end
+                end
             end
 
             local loader_conf_entries = table.append(loader_klds, table.unpack(loader_tunables))
