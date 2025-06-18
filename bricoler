@@ -2880,7 +2880,7 @@ the VM is shut down.
             default = 1,
         },
         tests = {
-            description = "A list of tests to run, relative to /usr/tests",
+            description = "A space-separated list of tests to run, relative to /usr/tests",
             type = "string",
             default = "",
         },
