@@ -1825,6 +1825,10 @@ Task{
             description = "Clean the build directory before building",
             default = false,
         },
+        ccache = {
+            description = "Enable ccache support to speed up the build",
+            default = true,
+        },
         kernel_config = {
             description = "The kernel configuration file to use for buildkernel",
             type = "string",
@@ -1923,6 +1927,7 @@ Task{
                     "METALOG=" .. metalog,
                     "TARGET=" .. machine,
                     self.clean and "WITH_CLEAN=" or "WITHOUT_CLEAN=",
+                    self.ccache and "WITH_CCACHE=" or "WITHOUT_CCACHE=",
                 }
                 table.insert(args, machine_arch and "TARGET_ARCH=" .. machine_arch or nil)
                 table.insert(args, self.kernel_config and "KERNCONF=" .. self.kernel_config or nil)
