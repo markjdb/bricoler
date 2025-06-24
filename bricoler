@@ -1927,7 +1927,7 @@ Task{
                     "METALOG=" .. metalog,
                     "TARGET=" .. machine,
                     self.clean and "WITH_CLEAN=" or "WITHOUT_CLEAN=",
-                    self.ccache and "WITH_CCACHE=" or "WITHOUT_CCACHE=",
+                    self.ccache and "WITH_CCACHE_BUILD=" or "WITHOUT_CCACHE_BUILD=",
                 }
                 table.insert(args, machine_arch and "TARGET_ARCH=" .. machine_arch or nil)
                 table.insert(args, self.kernel_config and "KERNCONF=" .. self.kernel_config or nil)
