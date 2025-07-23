@@ -2571,7 +2571,7 @@ fi
         end
 
         if self.overlay then
-            exec("cp", "-R", self.overlay .. "/", stagedir)
+            exec("cp", "-Rf", self.overlay .. "/", stagedir)
             mtree:stage("overlay.mtree", self.overlay, "")
         end
 
