@@ -707,6 +707,8 @@ local VMRun = Class({
     disk_list = "string",
     -- The hyperisor to use.
     hypervisor = "string",
+    -- A path to the hypervisor executable to use.
+    hypervisor_exe = "string",
     -- Path to the VM's disk image.
     image = "string",
     -- Run QEMU in its own pty (using orch)?
@@ -763,6 +765,10 @@ function VMRun.task_parameters()
             description = "The hypervisor to use",
             valid = {"bhyve", "qemu"},
             default = "qemu",
+        },
+        hypervisor_exe = {
+            description = "Path to the hypervisor executable",
+            type = "string",
         },
         interactive = {
             description = "Run QEMU interactively",
@@ -846,6 +852,7 @@ function VMRun:scpfrom(user, key, src, dst)
 end
 
 local BhyveRun = Class({
+    hypervisor_exe = "bhyve",
     runargs = {},
     memory = 1024,
     name = "",
@@ -920,7 +927,7 @@ function BhyveRun:_ctor()
         end
 
         table.append(bhyveargs,
-            "bhyve",
+            self.hypervisor_exe,
             "-m", tostring(self.memory) .. "M",
             "-c", tostring(self.ncpus))
         adddev("hostbridge")
@@ -1005,6 +1012,9 @@ local QEMURun = Class({
 
 -- Return a path to the QEMU executable for this platform.
 function QEMURun:_binary()
+    if self.hypervisor_exe then
+        return self.hypervisor_exe
+    end
     local bins = {
         ["amd64/amd64"] = "qemu-system-x86_64",
         ["i386/i386"] = "qemu-system-i386",
