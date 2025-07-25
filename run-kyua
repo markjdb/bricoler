@@ -32,13 +32,16 @@ PARALLELISM=$(sysctl -n hw.ncpu)
 REPORT_DB=./kyua.db
 REPORT_LOG=./kyua-report.txt
 
-while getopts "c:d:j:o:r:" opt; do
+while getopts "c:d:f:j:o:r:" opt; do
     case $opt in
     c)
         COUNT=$OPTARG
         ;;
     d)
         DISK_LIST=$OPTARG
+        ;;
+    f)
+        RESULTS_FILTER="--results-filter $OPTARG"
         ;;
     j)
         PARALLELISM=$OPTARG
@@ -73,7 +76,7 @@ for i in $(jot $COUNT); do
     status=$?
 
     kyua report --verbose \
-        --results-filter skipped,xfail,broken,failed \
+        $RESULTS_FILTER \
         --output=$REPORT_LOG -r $REPORT_DB
 
     if [ $status -ne 0 ]; then

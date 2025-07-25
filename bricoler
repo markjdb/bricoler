@@ -2893,6 +2893,10 @@ the VM is shut down.
             description = "Number of times to run the specified test(s)",
             default = 1,
         },
+        results_filter = {
+            description = "Test case result filter to apply to kyua report",
+            default = "skipped,xfail,broken,failed",
+        },
         tests = {
             description = "A space-separated list of tests to run, relative to /usr/tests",
             type = "string",
@@ -2935,6 +2939,7 @@ the VM is shut down.
             local testparams = {
                 "-c", self.count,
                 "-d", "\"" .. disk_dev_list .. "\"",
+                "-f", self.results_filter,
                 "-j", self.parallelism or self.ncpus,
                 "-o", reportpath,
                 "-r", dbpath,
