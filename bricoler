@@ -2886,8 +2886,7 @@ the VM is shut down.
             default = 8 * 1024
         },
         parallelism = {
-            -- Defaults to the number of vCPUs.
-            description = "The number of tests to run in parallel",
+            description = "The number of tests to run in parallel, defaults to the number of vCPUs",
             type = "number",
         },
         count = {
