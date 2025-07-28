@@ -1846,6 +1846,10 @@ Task{
                 return host_machine() == "arm64/aarch64c" and "GENERIC-MORELLO" or nil
             end,
         },
+        kernel_config_dir = {
+            description = "A extra directory containing kernel configuration files",
+            type = "string",
+        },
         kernel_modules = {
             description = "A list of kernel modules to build, all are built by default",
             type = "string",
@@ -1941,6 +1945,7 @@ Task{
                 }
                 table.insert(args, machine_arch and "TARGET_ARCH=" .. machine_arch or nil)
                 table.insert(args, self.kernel_config and "KERNCONF=" .. self.kernel_config or nil)
+                table.insert(args, self.kernel_config_dir and "KERNCONFDIR=" .. self.kernel_config_dir or nil)
                 table.insert(args, self.kernel_modules and "MODULES_OVERRIDE=" .. self.kernel_modules or nil)
                 table.insert(args, self.toolchain and "CROSS_TOOLCHAIN=" .. self.toolchain or nil)
                 if self.make_arguments then
@@ -2080,6 +2085,7 @@ debug mode.
         freebsd_src = "freebsd-src",
         freebsd_build = {"freebsd-src-build",
             kernel_config = "SYZKALLER",
+            kernel_config_dir = "/tmp",
         },
         vm_image = "freebsd-src-syzkaller-vm-image",
     },
@@ -2179,8 +2185,7 @@ debug mode.
         -- be able to set the build target machine from target_architecture.
         do
             self.freebsd_src = self.freebsd_src:run(ctx)
-            local confpath = sprintf("%s/sys/%s/conf/SYZKALLER",
-                                     self.freebsd_src.path,
+            local confpath = sprintf("/tmp/SYZKALLER",
                                      self.target_architecture)
             writefile(confpath, ([[
 include %s
