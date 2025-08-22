@@ -1240,10 +1240,15 @@ end
 function TaskParameter:bind(v, source)
     -- Is the value valid according to the parameter definition?
     do
-        local valid = false
+        local reason, valid = false
         if type(self.valid) == "function" then
-            valid = self.valid(v)
+            valid, reason = self.valid(v)
             assert(type(valid) == "boolean")
+            if type(reason) == "string" then
+                reason = ": " .. reason
+            else
+                assert(reason == nil)
+            end
         else
             for _, candidate in ipairs(self.valid) do
                 if v == candidate then
@@ -1253,7 +1258,7 @@ function TaskParameter:bind(v, source)
             end
         end
         if not valid then
-            errx("Invalid value for parameter '%s'", self.name)
+            errx("Invalid value for parameter '%s'%s", self.name, reason)
         end
     end
 
@@ -2333,6 +2338,12 @@ Task{
             description = "A list of packages to install on the VM upon first boot",
             default = "",
         },
+        package_repo_file = {
+            description = "A pkg(8) repository configuration file to use",
+            type = "string",
+            -- Has to be an absolute path for now due to stupid limitations.
+            valid = function(v) return v:match("^/") ~= nil, "must be an absolute path" end,
+        },
         rc_kld_list = {
             description = "A list of kernel modules to load upon boot via rc.conf",
             default = "",
@@ -2477,7 +2488,10 @@ Task{
 
             local repodir = stagedir .. "/tmp/pkg"
             mkdir(repodir)
-            writefile(repodir .. "/repo.conf", substitute([[
+            if self.package_repo_file then
+                exec("cp", "-f", self.package_repo_file, repodir .. "/repo.conf")
+            else
+                writefile(repodir .. "/repo.conf", substitute([[
 FreeBSD: {
     url: "pkg+http://pkg.FreeBSD.org/$ABI/latest",
     mirror_type: "srv",
@@ -2488,6 +2502,7 @@ FreeBSD: {
 ]], {
     ABI = pkgabi,
 }))
+            end
 
             local pkgs = {}
             for pkg in self.packages:gmatch("%S+") do
