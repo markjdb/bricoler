@@ -808,7 +808,7 @@ function VMRun.task_parameters()
         },
         tpm_device_path = {
             description = "Path to a TPM device to pass through to the VM",
-            type = "string",
+            default = "",
         },
         vmname = {
             description = "Name of the VM (relevant for bhyve only)",
