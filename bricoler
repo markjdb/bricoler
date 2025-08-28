@@ -729,6 +729,8 @@ local VMRun = Class({
     reboot = "boolean",
     -- TAP interfaces to open in the VM.
     tap_list = "string",
+    -- A TPM device to pass through to the VM.
+    tpm_device_path = "string",
     -- The addr:port on which to listen for SSH connections.
     ssh_addr = function (v) return v:match("^[^:]+:%d+$") end,
     -- The addr:port on which to listen for gdb connections.
@@ -803,6 +805,10 @@ function VMRun.task_parameters()
         tap_list = {
             description = "TAP interfaces to open",
             default = "",
+        },
+        tpm_device_path = {
+            description = "Path to a TPM device to pass through to the VM",
+            type = "string",
         },
         vmname = {
             description = "Name of the VM (relevant for bhyve only)",
@@ -978,6 +984,9 @@ function BhyveRun:_ctor()
                 errx("Invalid p9fs share description: %s", p9fs_share)
             end
             adddev(sprintf("virtio-9p,%s=%s", share, path))
+        end
+        for tpm in self.tpm_device_path:gmatch("%S+") do
+            table.append(bhyveargs, "-l", "tpm,passthru," .. tpm)
         end
 
         table.append(bhyveargs, self.vmname)
