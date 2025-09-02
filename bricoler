@@ -2370,6 +2370,10 @@ Task{
             description = "The size of the swap partition",
             default = "2G",
         },
+        sysctls = {
+            description = "A list of sysctl settings to write to /etc/sysctl.conf",
+            default = "",
+        },
     },
 
     run = function(self, ctx)
@@ -2448,6 +2452,10 @@ Task{
                     end
                 end
             end
+            local sysctls = {}
+            for sysctl in self.sysctls:gmatch("%S+") do
+                table.insert(sysctls, sysctl)
+            end
 
             local loader_conf_entries = table.append(loader_klds, table.unpack(loader_tunables))
             conffile("/boot/loader.conf",
@@ -2474,6 +2482,8 @@ Task{
                 "/dev/gpt/swap none swap sw 0 0",
                 table.unpack(fstab_entries))
             conffile("/firstboot")
+            conffile("/etc/sysctl.conf",
+                table.unpack(sysctls))
         end
 
         -- Add sudoers files.
@@ -2851,20 +2861,18 @@ Task{"freebsd-src-vm-image",
             -- It's useful to be able to log in to have a look around.
             default = "root",
         },
+        sysctls = {
+            default = "kern.ipc.tls.enable=1 " ..
+                      "vfs.aio.enable_unsafe=1 " ..
+                      "kern.crypto.allow_soft=1 " ..
+                      "vm.panic_on_oom=1",
+        },
     },
 
     run = function(self, ctx)
         self.build = self.build:run(ctx)
         local stagedir = self.build.stagedir
         local mtree = self.build.metalog
-
-        writefile(stagedir .. "/etc/sysctl.conf", [[
-kern.ipc.tls.enable=1
-vfs.aio.enable_unsafe=1
-kern.crypto.allow_soft=1
-vm.panic_on_oom=1
-]])
-        mtree:add("./etc/sysctl.conf")
 
         mkdir(stagedir .. "/usr/local/bin")
         mtree:add("./usr/local/bin")
