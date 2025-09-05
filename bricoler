@@ -2842,7 +2842,7 @@ Task{"freebsd-src-vm-image",
             -- XXX-MJ fusefs tests silently skip themselves if mac_bsdextended
             -- is loaded.
             default = "accf_data accf_dns accf_http accf_tls " ..
-                      "carp cryptodev ctl dummymbuf dummynet fusefs " ..
+                      "carp cfiscsi cryptodev ctl dummymbuf dummynet fusefs " ..
                       "if_bridge if_enc if_epair if_ovpn if_stf " ..
                       "ipdivert ipfw ipfw ipfw_nat ipl ipsec " ..
                       "mqueuefs " ..
