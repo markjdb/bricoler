@@ -12,7 +12,7 @@ For example, to run the FreeBSD regression test suite against an existing clone
 of the FreeBSD src tree, run:
 
 ```
-$ bricoler run freebsd-src-regression-suite-run -p freebsd-src:url=/path/to/clone
+$ bricoler run freebsd-src-regression-suite -p freebsd-src:url=/path/to/clone
 ```
 
 Add "--show" to list the available parameters.  Run "bricoler run" without any
