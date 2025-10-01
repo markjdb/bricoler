@@ -2841,12 +2841,12 @@ Task{"freebsd-src-vm-image",
         rc_kld_list = {
             -- XXX-MJ fusefs tests silently skip themselves if mac_bsdextended
             -- is loaded.
-            default = "accf_data accf_dns accf_http accf_tls " ..
+            default = "accf_data accf_dns accf_http accf_tls blake2 " ..
                       "carp cfiscsi cryptodev ctl dummymbuf dummynet fusefs " ..
                       "if_bridge if_enc if_epair if_ovpn if_stf " ..
                       "ipdivert ipfw ipfw ipfw_nat ipl ipsec " ..
-                      "mqueuefs " ..
-                      "pf pflog pflow pfsync sctp tcpmd5",
+                      "mac_bsdextended mac_ipacl mac_portacl mqueuefs " ..
+                      "pf pflog pflow pfsync sctp snd_dummy tarfs tcpmd5 ",
         },
         image_size = {
             default = "30g"
@@ -2855,7 +2855,8 @@ Task{"freebsd-src-vm-image",
             default = "coreutils python python3 devel/py-pytest net/scapy " ..
                       "perl5 jq ksh93 llvm gtar isc-dhcp44-server openvpn " ..
                       "sg3_utils sudo ndisc6 nmap nist-kat git-lite " ..
-                      "devel/py-twisted porch gdb"
+                      "devel/py-twisted porch gdb filesystems/ext2 " ..
+                      "security/setaudit ",
         },
         ssh_users = {
             -- It's useful to be able to log in to have a look around.
@@ -2865,7 +2866,11 @@ Task{"freebsd-src-vm-image",
             default = "kern.ipc.tls.enable=1 " ..
                       "vfs.aio.enable_unsafe=1 " ..
                       "kern.crypto.allow_soft=1 " ..
-                      "vm.panic_on_oom=1",
+                      "vm.panic_on_oom=1 " ..
+                      "security.mac.bsdextended.enabled=0 " ..
+                      "security.mac.ipacl.ipv4=0 " ..
+                      "security.mac.ipacl.ipv6=0 " ..
+                      "security.mac.portacl.enabled=0 ",
         },
     },
 
