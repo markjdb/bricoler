@@ -2802,6 +2802,7 @@ Task{
             exec(gdb,
                  "-ex", sprintf("set sysroot %s", sysroot),
                  "-ex", sprintf("file %s/boot/kernel/kernel", sysroot),
+                 "-ex", sprintf("source %s/usr/lib/debug/boot/kernel/kernel-gdb.py", sysroot),
                  "-ex", "target remote " .. addr .. ":" .. port)
         end,
 
