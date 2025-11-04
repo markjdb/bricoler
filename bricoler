@@ -2594,18 +2594,23 @@ bricoler_add_pkgs()
     # Install pkg(8).
     IGNORE_OSVERSION=yes pkg add -r local pkg-%s.*
     # Install all the packages we fetched above.
-    IGNORE_OSVERSION=yes pkg install -y -r local -g '*'
+    pkgs='%s'
+    IGNORE_OSVERSION=yes pkg install -y -r local ${pkgs}
     if [ $? -ne 0 ]; then
         # There is some pkg bug that requires us to run this twice.
         # Otherwise it'll fail when trying to update the upstream repo.
-        IGNORE_OSVERSION=yes pkg install -y -r local -g '*'
+        IGNORE_OSVERSION=yes pkg install -y -r local ${pkgs}
     fi
 }
 
 if [ -f /firstboot ]; then
     bricoler_add_pkgs
 fi
-]], bootstrapdir, pkgversion:match("^%s*(.-)%s*$")))
+]],
+                bootstrapdir,
+                pkgversion:match("^%s*(.-)%s*$"),
+                table.concat(pkgs, " ")
+            ))
             mtree:add("./etc/rc.local")
 
             ::pkgdone::
