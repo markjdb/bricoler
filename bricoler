@@ -578,7 +578,7 @@ function MTree:add(path)
         errx("Path %s is not a directory, symlink, or regular file", fullpath)
     end
     table.insert(self._entries, {
-        path = path,
+        path = path:gsub(" ", "\\s"),
         mode = mode,
         type = type,
         uname = self.defaults.uname,
@@ -612,7 +612,8 @@ function MTree:stage(tmpfile, rootdir, reldir)
     local f = io.open_checked(tmpfile, "r")
     for line in f:lines() do
         if not line:match("^%s*#") then
-            local path = line:match("^%S+")
+            -- Replace escaped spaces: \040 -> ' '
+            local path = line:match("^%S+"):gsub("\\040", " ")
             local prefix = "./" .. reldir
             if path == "." then
                 -- makefs will reject a path like "./foo/.".
