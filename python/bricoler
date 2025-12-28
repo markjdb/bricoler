@@ -12,19 +12,22 @@ import inspect
 import json
 import os
 import re
+import shutil
 import sys
+import textwrap
 from abc import ABC, ABCMeta, abstractmethod
 from enum import Enum
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Dict, List, Optional, Set, Tuple, Type, Union
 
+from mtree import MtreeFile
 from util import chdir, host_machine, run_cmd
 
 
 class TaskMeta(ABCMeta):
     _registry: Dict[str, Type['Task']] = {}
-    _reserved_names: List[str] = [
+    _reserved_names: Set[str] = {
         'bindings',
         'description',
         'inputs',
@@ -32,45 +35,19 @@ class TaskMeta(ABCMeta):
         'outputs',
         'parameters',
         'run'
-    ]
+    }
 
     @classmethod
-    def _register(mcs, cls: Type['Task'], namespace) -> None:
-        task_name = namespace.get('name')
-        if not task_name:
+    def _validate_common(mcs, cls: Type['Task'], namespace) -> None:
+        # No bindings should be defined initially, they are added once we
+        # instantiate tasks and bind parameters.
+        if len(getattr(cls, 'bindings', {})) > 0:
             raise ValueError(
-                f"Task class {task_name} must define a 'name' attribute"
+                f"Task '{cls.name}' should not define any bindings"
             )
 
-        parameters = getattr(cls, 'parameters')
-        inputs = getattr(cls, 'inputs')
-        outputs = getattr(cls, 'outputs')
-
-        # Do some validation of the task definition.
-        #
-        # Ensure that the input, output and parameter names are all disjoint.
-        overlap = (inputs.keys() & outputs.keys()) | \
-                  (inputs.keys() & parameters.keys()) | \
-                  (outputs.keys() & parameters.keys())
-        if len(overlap) > 0:
-            raise ValueError(
-                f"Task '{task_name}' has overlapping names: {', '.join(overlap)}"
-            )
-        # Make sure that none of the names overlap with reserved names.
-        overlap = (inputs.keys() & set(mcs._reserved_names)) | \
-                  (outputs.keys() & set(mcs._reserved_names)) | \
-                  (parameters.keys() & set(mcs._reserved_names))
-        if len(overlap) > 0:
-            raise ValueError(
-                f"Task '{task_name}' uses reserved names: {', '.join(overlap)}"
-            )
-        # Inputs must be a subclass of Task.
-        for name, input_type in inputs.items():
-            if not inspect.isclass(input_type) or not issubclass(input_type, Task):
-                raise TypeError(
-                    f"Input '{name}' in task '{cls.name}' must be a subclass of Task"
-                )
         # Any members must be a parameter type.
+        parameters = getattr(cls, 'parameters')
         for name in namespace.keys():
             if name.startswith('_'):
                 continue
@@ -80,29 +57,65 @@ class TaskMeta(ABCMeta):
                 raise ValueError(
                     f"Member '{name}' in task '{cls.name}' is not defined as a parameter"
                 )
-        # No bindings should be defined initially, they are added once we create jobs and
-        # bind parameters.
-        if len(getattr(cls, 'bindings', {})) > 0:
+
+    @classmethod
+    def _validate_named_task(mcs, cls: Type['Task'], name: str, namespace) -> None:
+        mcs._validate_common(cls, namespace)
+
+        parameters = getattr(cls, 'parameters')
+        inputs = getattr(cls, 'inputs')
+        outputs = getattr(cls, 'outputs')
+
+        # Do some validation of the task definition.
+        #
+        # Ensure that the input parameter names are disjoint.
+        overlap = inputs.keys() & parameters.keys()
+        if len(overlap) > 0:
             raise ValueError(
-                f"Task '{cls.name}' should not define any bindings"
+                f"Task '{name}' has overlapping names: {', '.join(overlap)}"
             )
+        # Make sure that none of the names overlap with reserved names.
+        overlap = (inputs.keys() & mcs._reserved_names) | \
+                  (outputs.keys() & mcs._reserved_names) | \
+                  (parameters.keys() & mcs._reserved_names)
+        if len(overlap) > 0:
+            raise ValueError(
+                f"Task '{name}' uses reserved names: {', '.join(overlap)}"
+            )
+        # Inputs must be a subclass of Task.
+        for name, input_type in inputs.items():
+            if not inspect.isclass(input_type) or not issubclass(input_type, Task):
+                raise TypeError(
+                    f"Input '{name}' in task '{cls.name}' must be a subclass of Task"
+                )
         # Validate parameter types.
         for name, param in parameters.items():
-            if hasattr(cls, name):
-                val = getattr(cls, name)
-                if type(val) is not param.type:
-                    raise TypeError(
-                        f"Parameter '{name}' in task '{cls.name}' has type "
-                        f"{type(getattr(cls, name))}, expected {param.typename}"
-                    )
+            val = getattr(cls, name, None)
+            if val is not None and type(val) is not param.type:
+                raise TypeError(
+                    f"Parameter '{name}' in task '{cls.name}' has type "
+                    f"{type(getattr(cls, name))}, expected {param.typename}"
+                )
 
-        # Finally place the task in the global registry.
-        mcs._registry[task_name] = cls
+    @classmethod
+    def _validate_anonymous_task(mcs, cls: Type['Task'], namespace) -> None:
+        mcs._validate_common(cls, namespace)
+
+        invalid_keys = mcs._reserved_names & set(namespace.keys())
+        if len(invalid_keys) > 0:
+            raise ValueError(
+                f"Anonymous task '{cls.__name__}' cannot define: {', '.join(invalid_keys)}"
+            )
 
     def __new__(mcs, name, bases, namespace):
         cls = super().__new__(mcs, name, bases, namespace)
         if not inspect.isabstract(cls):
-            mcs._register(cls, namespace)
+            task_name = namespace.get('name')
+            if task_name is not None:
+                mcs._validate_named_task(cls, task_name, namespace)
+                mcs._registry[task_name] = cls
+            else:
+                mcs._validate_anonymous_task(cls, namespace)
         return cls
 
     @classmethod
@@ -115,6 +128,7 @@ class TaskMeta(ABCMeta):
 
 
 class TaskParameter:
+    choices: Optional[List[Any]] = None
     default: Any
     description: str
     required: bool
@@ -127,6 +141,7 @@ class TaskParameter:
         self.type = kwargs.get('type')
         self.default = kwargs.get('default', None)
         self.required = self.default is None
+        self.choices = kwargs.get('choices', None)
 
         if self.default is not None:
             while callable(self.default):
@@ -185,15 +200,17 @@ class TaskParameterBinding:
 
 
 class Task(ABC, metaclass=TaskMeta):
+    bindings: Dict[str, TaskParameterBinding] = {}
+    _final_outputs: Optional[Dict[str, Any]] = None
     name: str
     description: str = ''
-    bindings: Dict[str, TaskParameterBinding] = {}
     inputs: Dict[str, Type['Task']] = {}
     outputs: Dict[str, Any] = {}
     parameters: Dict[str, TaskParameter] = {}
 
     def __init__(self):
         super().__init__()
+        self._finished = False
 
         for name, param in self.parameters.items():
             self.bind({name: param.default},
@@ -211,15 +228,34 @@ class Task(ABC, metaclass=TaskMeta):
                 )
             self.bindings[name] = TaskParameterBinding(value=param, source=source)
 
-    def _run(self) -> Dict[str, Any]:
+    def _run(self, ctx: SimpleNamespace) -> Dict[str, Any]:
+        if self._final_outputs is not None:
+            # Each task runs only once.
+            return self._final_outputs
+
         for name, param in self.bindings.items():
             setattr(self, name, param.value)
 
         with chdir(Path.cwd() / self.name):
-            return self.run()
+            outputs = self.run(ctx)
+            if set(outputs.keys()) != set(self.outputs.keys()):
+                missing = set(self.outputs.keys()) - set(outputs.keys())
+                raise ValueError(
+                    f"Task {self.name} did not produce expected outputs: {', '.join(missing)}"
+                )
+            for name, val in outputs.items():
+                # It would be nice if we could validate this statically...
+                expected_type = self.outputs[name]
+                if not isinstance(val, expected_type):
+                    raise TypeError(
+                        f"Output '{name}' in task '{self.name}' has type "
+                        f"{type(val)}, expected {expected_type}"
+                    )
+            self._final_outputs = outputs
+            return outputs
 
     @abstractmethod
-    def run(self) -> Dict[str, Any]: ...
+    def run(self, ctx) -> Dict[str, Any]: ...
 
 
 class Config:
@@ -387,20 +423,19 @@ class TaskSchedule:
             for name, input in task.inputs.items():
                 self.children[name] = TaskSchedule.TaskScheduleNode(input)
 
-        def _bind(self, params: Dict[str, Dict[str, Any]], source):
-            if self.task.name in params:
-                self.task.bind(params[self.task.name], source)
-            for child in self.children.values():
-                child._bind(params, source)
-
-        def _run(self) -> Dict[str, Any]:
+        def _run(self, ctx: SimpleNamespace) -> Dict[str, Any]:
             for input, child in self.children.items():
-                outputs = child._run()
+                outputs = child._run(ctx)
                 inputs = {}
                 for name, val in outputs.items():
                     inputs[name] = val
                 setattr(self.task, input, SimpleNamespace(**inputs))
-            return self.task._run()
+            return self.task._run(ctx)
+
+        def __iter__(self):
+            yield self
+            for child in self.children.values():
+                yield from child
 
     config: Config
     schedule: TaskScheduleNode
@@ -408,12 +443,27 @@ class TaskSchedule:
     def __init__(self, config: Config):
         self.config = config
         self.schedule = self.TaskScheduleNode(config.task)
-        self.schedule._bind(config.task_params,
-                            TaskParameterBinding.BindingType.COMMAND_LINE)
+
+        # Preen the schedule.
+        tasks = {}
+        for node in self.schedule:
+            if node.task.name in tasks:
+                node.task = tasks[node.task.name]
+            else:
+                tasks[node.task.name] = node.task
+
+        # Bind command-line parameters.
+        for node in self.schedule:
+            if node.task.name in config.task_params:
+                node.task.bind(
+                    config.task_params[node.task.name],
+                    TaskParameterBinding.BindingType.COMMAND_LINE
+                )
 
     def run(self):
+        ctx = SimpleNamespace(max_jobs=self.config.max_jobs)
         with chdir(self.config.workdir):
-            self.schedule._run()
+            self.schedule._run(ctx)
 
     @property
     def parameters(self) -> Dict[str, Tuple[TaskParameter, Any]]:
@@ -460,7 +510,7 @@ class GitRepository:
         if not self.path:
             raise ValueError("Repository has not been cloned yet")
         return run_cmd(
-            ['git', '-C', str(self.path)] + args,
+            ['git', '-C', self.path] + args,
             capture_output=True
         )
 
@@ -480,7 +530,7 @@ class GitRepository:
                     f"Clone at '{path}' has no remote corresponding to '{self.url}'"
                 )
             self.git(["fetch", remote])
-            self.git(["checkout", remote + f"/{self.branch}"])
+            self.git(["checkout", f"{remote}/{self.branch}"])
         elif self.skip_clone:
             raise ValueError(
                 f"Repository path '{self.url}' does not exist or is not a repo clone"
@@ -489,7 +539,7 @@ class GitRepository:
             cmd = ["git", "clone", "--depth=1"]
             if self.branch:
                 cmd += ["--branch", self.branch]
-            cmd += [self.url, str(path.resolve())]
+            cmd += [self.url, path.resolve()]
             run_cmd(cmd)
 
     @property
@@ -520,7 +570,7 @@ class FreeBSDSrcRepository(GitRepository):
             )
 
     def make(self, args: List[str], **kwargs):
-        cmd = ['make', '-C', str(self.path.resolve())] + args
+        cmd = ['make', '-C', self.path.resolve()] + args
         return run_cmd(cmd, **kwargs)
 
     @functools.cache
@@ -552,7 +602,7 @@ class GitCheckoutTask(Task):
         'repo': GitRepository
     }
 
-    def run(self, *, repotype: Type[GitRepository] = GitRepository):
+    def run(self, ctx, repotype=GitRepository):
         repo = repotype(self.url, self.branch)
         repo.clone(Path("./src"))
         return {'repo': repo}
@@ -569,8 +619,8 @@ class FreeBSDSrcGitCheckoutTask(GitCheckoutTask):
         '__FreeBSD_version': int,
     }
 
-    def run(self):
-        outputs = super().run(repotype=FreeBSDSrcRepository)
+    def run(self, ctx):
+        outputs = super().run(ctx, repotype=FreeBSDSrcRepository)
         outputs['__FreeBSD_version'] = outputs['repo'].get___FreeBSD_version()
         return outputs
 
@@ -601,7 +651,7 @@ class FreeBSDSrcBuildTask(Task):
         ),
         'objdir': TaskParameter(
             description='Object directory path for the build',
-            type=Path,  # XXX-MJ default
+            type=Path,  # XXX-MJ default must be computed after some partial eval
         ),
     }
 
@@ -610,9 +660,12 @@ class FreeBSDSrcBuildTask(Task):
     }
 
     outputs = {
+        'machine': str,
+        'metalog': MtreeFile,
+        'stagedir': Path,
     }
 
-    def run(self):
+    def run(self, ctx):
         # See if the user specified a valid target platform.
         if '/' not in self.machine:
             machine = self.machine
@@ -641,6 +694,7 @@ class FreeBSDSrcBuildTask(Task):
         stagedir = Path(f"./stage.{machine}.{machine_arch}").resolve()
         stagedir.mkdir(parents=True, exist_ok=True)
 
+        mtree = MtreeFile()
         for target in self.make_targets.split():
             metalog = stagedir / f"METALOG.{target}.mtree"
             with open(metalog, 'w') as f:
@@ -649,12 +703,12 @@ class FreeBSDSrcBuildTask(Task):
             args = [
                 target,
                 "-ss",
-                "-j", "1",  # XXX-MJ str(self.config.max_jobs)
+                "-j", ctx.max_jobs,
                 "-DNO_ROOT",
-                "DESTDIR=" + str(stagedir),
-                "METALOG=" + str(metalog),
-                "TARGET=" + machine,
-                "KERNCONF=" + self.kernel_config,
+                f"DESTDIR={stagedir}",
+                f"METALOG={metalog}",
+                f"TARGET={machine}",
+                f"KERNCONF={self.kernel_config}",
             ]
             if self.clean:
                 args.append("WITH_CLEAN=")
@@ -668,6 +722,205 @@ class FreeBSDSrcBuildTask(Task):
             }
 
             self.src.repo.make(args, env=env)
+
+            mtree.load(metalog, append=True, contents_root=stagedir)
+
+        return {
+            'machine': f"{machine}/{machine_arch}",
+            'metalog': mtree,
+            'stagedir': stagedir,
+        }
+
+
+class FreeBSDSrcBuildAndInstallTask(FreeBSDSrcBuildTask):
+    make_targets = "buildworld buildkernel installworld installkernel distribution"
+
+
+class FreeBSDVMImageFilesystem(Enum):
+    UFS = 'ufs'
+    ZFS = 'zfs'
+
+
+class FreeBSDVMImage(Task):
+    name = 'freebsd-vm-image'
+
+    inputs = {
+        'src': FreeBSDSrcGitCheckoutTask,
+        'build': FreeBSDSrcBuildAndInstallTask,
+    }
+
+    outputs = {
+        'ssh_key_directory': Path
+    }
+
+    parameters = {
+        'filesystem': TaskParameter(
+            description='Filesystem type for the VM image',
+            type=FreeBSDVMImageFilesystem,
+            default=FreeBSDVMImageFilesystem.UFS,
+        ),
+        'hostname': TaskParameter(
+            description='Hostname for the VM',
+            type=str,
+            default='freebsd',
+        ),
+        'image_size': TaskParameter(
+            description='Size of the VM image',
+            type=str,
+            default='10g',
+        ),
+        'loader_tunables': TaskParameter(
+            description='Loader tunables for the VM',
+            type=str,  # XXX-MJ Dict[str, str]
+            default='',
+        ),
+        'swap_size': TaskParameter(
+            description='Size of the swap partition',
+            type=str,
+            default='2G',
+        ),
+    }
+
+    def run(self, ctx) -> Dict[str, Any]:
+        outputs = {}
+
+        machine = self.build.machine
+        mtree: MtreeFile = self.build.metalog
+        stagedir = self.build.stagedir
+
+        def add_config_file(path: Union[Path, str], *args, source: Optional[Path] = None):
+            if type(path) is str:
+                path = Path(path)
+            if source is not None:
+                shutil.copyfile(source, path)
+                mode = "a"
+            else:
+                mode = "w"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open(mode) as f:
+                f.write("# Added by bricoler\n")
+                contents = [textwrap.dedent(arg).strip() for arg in args if arg != ""]
+                f.write(str.join("\n", contents) + "\n")
+            mtree.add_file(path.resolve(), path)
+
+        # Create ssh keys for the VM.
+        with chdir(Path("ssh-keys")):
+            keyfile = Path("id_ed25519_root").resolve()
+            if not keyfile.is_file():
+                run_cmd(["ssh-keygen", "-t", "ed25519", "-f", str(keyfile), "-N", ""])
+            mtree.add_file(keyfile.with_suffix('.pub'),
+                           Path("root/.ssh/authorized_keys"))
+            outputs['ssh_key_directory'] = Path.cwd()
+
+        add_config_file("etc/ssh/sshd_config",
+                        "PermitRootLogin without-password",
+                        source=(stagedir / "etc/ssh/sshd_config"))
+
+        add_config_file("etc/rc.conf",
+                        f"hostname={self.hostname}",
+                        "ifconfig_vtnet0=SYNCDHCP",
+                        "ifconfig_em0=SYNCDHCP",
+                        "defaultroute_delay=2",
+                        "sshd_enable=YES",
+                        "sshd_rsa_enable=NO",
+                        """
+                        zfs_enable=YES
+                        zpool_reguid=zroot
+                        zpool_upgrade=zroot
+                        """ if self.filesystem == FreeBSDVMImageFilesystem.ZFS else "")
+        add_config_file("etc/fstab",
+                        """
+                        /dev/gpt/rootfs / ufs rw 1 1
+                        """ if self.filesystem == FreeBSDVMImageFilesystem.UFS else "",
+                        "none /dev/fd fdescfs rw 0 0")
+        add_config_file("boot/loader.conf",
+                        "autoboot_delay=1",
+                        "console=comconsole",
+                        "kern.geom.label.disk_ident.enable=0",
+                        "zfs_load=YES" if self.filesystem == FreeBSDVMImageFilesystem.ZFS else "",
+                        *[tunable for tunable in self.loader_tunables.split()])
+
+        metalog_path = Path("METALOG.mtree").resolve()
+        mtree.write(metalog_path)
+
+        image_prefix = f"image.{self.build.machine.replace('/', '.')}"
+        esp_image_path = Path(f"{image_prefix}-esp.fs").resolve()
+        fs_image_path = Path(f"{image_prefix}.{self.filesystem.name}").resolve()
+        vm_image_path = Path(f"{image_prefix}.img").resolve()
+
+        makefs_cmd = ["makefs"]
+        if self.filesystem == FreeBSDVMImageFilesystem.UFS:
+            makefs_cmd += ["-t", "ffs", "-Z", "-o", "softupdates=1", "-o" "version=2"]
+        else:
+            makefs_cmd += ["-t", "zfs", "-o", "poolname=zroot", "-o", "bootfs=zroot"]
+        makefs_cmd += [
+            "-DD",
+            "-s", self.image_size,
+            fs_image_path,
+            metalog_path,
+        ]
+
+        with chdir(stagedir):
+            run_cmd(makefs_cmd)
+
+        has_efi = not (machine.startswith('i386/') or machine.startswith('powerpc/'))
+        if has_efi:
+            efi_loaders = {
+                'amd64': "bootx86.efi",
+                'arm': "bootarm.efi",
+                'arm64': "bootaa64.efi",
+                'riscv': "bootriscv64.efi",
+            }
+            esp_dir = Path(image_prefix + "-efi")
+            with chdir(esp_dir / "BOOT/EFI"):
+                efi_loader = efi_loaders[machine.split('/')[0]]
+                shutil.copyfile(stagedir / "boot/loader.efi", Path(efi_loader))
+
+            makefs_cmd = [
+                "makefs",
+                "-t", "msdos",
+                "-o", "fat_type=16",
+                "-o", "sectors_per_cluster=1",
+                "-o", "volume_label=EFI",
+                "-s", "4m",
+                esp_image_path,
+                esp_dir,
+            ]
+            run_cmd(makefs_cmd)
+
+        bootdir = stagedir / "boot"
+        mkimg_cmd = [
+            "mkimg",
+            "-f", "raw",
+            "-S", 512,
+            "-o", vm_image_path,
+        ]
+        if machine.startswith('powerpc/'):
+            mkimg_cmd += [
+                "-s", "mbr",
+                "-a", "1",
+                "-p", f"prepboot:={bootdir / 'boot1.elf'}"
+                "-p", f"freebsd:={vm_image_path}",
+            ]
+        else:
+            mkimg_cmd += ["-s", "gpt"]
+            if machine.startswith('amd64/') or machine.startswith('i386/'):
+                mkimg_cmd += [
+                    "-b", f"{bootdir / 'pmbr'}",
+                    "-p", f"freebsd-boot/bootfs:={bootdir / 'gptboot'}",
+                ]
+            if has_efi:
+                mkimg_cmd += [
+                    "-p", f"efi:={esp_image_path}",
+                ]
+            mkimg_cmd += [
+                "-p", f"freebsd-swap/swap::{self.swap_size}",
+                "-p", f"freebsd-{self.filesystem.name}/rootfs:={fs_image_path}",
+            ]
+
+        run_cmd(mkimg_cmd)
+
+        return outputs
 
 
 def main() -> int:
@@ -683,6 +936,8 @@ def main() -> int:
             print("Available tasks:")
             for task_name in TaskMeta.task_names():
                 print(f"  {task_name}")
+            for alias in config.aliases:
+                print(f"  {alias['alias']} (alias for {alias['task']})")
             return 0
         elif args.list:
             for task_name in TaskMeta.task_names():

@@ -13,9 +13,9 @@ from typing import Dict, List, Optional
 
 
 @contextmanager
-def chdir(dir: Path):
+def chdir(dir: Path, **kwargs):
     old_dir = Path.cwd()
-    dir.mkdir(parents=True, exist_ok=True)
+    dir.mkdir(parents=True, exist_ok=True, **kwargs)
     os.chdir(dir)
     try:
         yield
@@ -23,17 +23,18 @@ def chdir(dir: Path):
         os.chdir(old_dir)
 
 
-def sysctl(name: str) -> str:
-    result = run_cmd(["sysctl", "-n", name], capture_output=True, text=True)
-    return result.stdout.strip()
-
-
 @functools.cache
 def host_machine() -> str:
     return sysctl("hw.machine") + "/" + sysctl("hw.machine_arch")
 
 
+def sysctl(name: str) -> str:
+    result = run_cmd(["sysctl", "-n", name], capture_output=True, text=True)
+    return result.stdout.strip()
+
+
 def run_cmd(cmd: List[str], *args, env: Optional[Dict[str, str]] = None, **kwargs):
+    cmd = [str(c) for c in cmd]
     if not os.getenv("BRICOLER_ARGCOMPLETE"):
         print(f"EXEC: '{' '.join(cmd)}'")
     if env is not None:
