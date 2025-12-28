@@ -1,0 +1,725 @@
+#!/usr/bin/env python3
+
+#
+# Copyright (c) Mark Johnston <markj@FreeBSD.org>
+#
+# SPDX-License-Identifier: BSD-2-Clause
+#
+
+import argparse
+import functools
+import inspect
+import json
+import os
+import re
+import sys
+from abc import ABC, ABCMeta, abstractmethod
+from enum import Enum
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, Dict, List, Optional, Tuple, Type
+
+from util import chdir, host_machine, run_cmd
+
+
+class TaskMeta(ABCMeta):
+    _registry: Dict[str, Type['Task']] = {}
+    _reserved_names: List[str] = [
+        'bindings',
+        'description',
+        'inputs',
+        'name',
+        'outputs',
+        'parameters',
+        'run'
+    ]
+
+    @classmethod
+    def _register(mcs, cls: Type['Task'], namespace) -> None:
+        task_name = namespace.get('name')
+        if not task_name:
+            raise ValueError(
+                f"Task class {task_name} must define a 'name' attribute"
+            )
+
+        parameters = getattr(cls, 'parameters')
+        inputs = getattr(cls, 'inputs')
+        outputs = getattr(cls, 'outputs')
+
+        # Do some validation of the task definition.
+        #
+        # Ensure that the input, output and parameter names are all disjoint.
+        overlap = (inputs.keys() & outputs.keys()) | \
+                  (inputs.keys() & parameters.keys()) | \
+                  (outputs.keys() & parameters.keys())
+        if len(overlap) > 0:
+            raise ValueError(
+                f"Task '{task_name}' has overlapping names: {', '.join(overlap)}"
+            )
+        # Make sure that none of the names overlap with reserved names.
+        overlap = (inputs.keys() & set(mcs._reserved_names)) | \
+                  (outputs.keys() & set(mcs._reserved_names)) | \
+                  (parameters.keys() & set(mcs._reserved_names))
+        if len(overlap) > 0:
+            raise ValueError(
+                f"Task '{task_name}' uses reserved names: {', '.join(overlap)}"
+            )
+        # Inputs must be a subclass of Task.
+        for name, input_type in inputs.items():
+            if not inspect.isclass(input_type) or not issubclass(input_type, Task):
+                raise TypeError(
+                    f"Input '{name}' in task '{cls.name}' must be a subclass of Task"
+                )
+        # Any members must be a parameter type.
+        for name in namespace.keys():
+            if name.startswith('_'):
+                continue
+            if name in mcs._reserved_names:
+                continue
+            if name not in parameters:
+                raise ValueError(
+                    f"Member '{name}' in task '{cls.name}' is not defined as a parameter"
+                )
+        # No bindings should be defined initially, they are added once we create jobs and
+        # bind parameters.
+        if len(getattr(cls, 'bindings', {})) > 0:
+            raise ValueError(
+                f"Task '{cls.name}' should not define any bindings"
+            )
+        # Validate parameter types.
+        for name, param in parameters.items():
+            if hasattr(cls, name):
+                val = getattr(cls, name)
+                if type(val) is not param.type:
+                    raise TypeError(
+                        f"Parameter '{name}' in task '{cls.name}' has type "
+                        f"{type(getattr(cls, name))}, expected {param.typename}"
+                    )
+
+        # Finally place the task in the global registry.
+        mcs._registry[task_name] = cls
+
+    def __new__(mcs, name, bases, namespace):
+        cls = super().__new__(mcs, name, bases, namespace)
+        if not inspect.isabstract(cls):
+            mcs._register(cls, namespace)
+        return cls
+
+    @classmethod
+    def lookup(mcs, name: str) -> Optional[Type['Task']]:
+        return mcs._registry.get(name)
+
+    @classmethod
+    def task_names(mcs) -> List[str]:
+        return list(mcs._registry.keys())
+
+
+class TaskParameter:
+    default: Any
+    description: str
+    required: bool
+    type: Any
+
+    _initialized = False
+
+    def __init__(self, **kwargs):
+        self.description = kwargs['description']
+        self.type = kwargs.get('type')
+        self.default = kwargs.get('default', None)
+        self.required = self.default is None
+
+        if self.default is not None:
+            while callable(self.default):
+                self.default = self.default()
+            if not isinstance(self.default, self.type):
+                raise TypeError(
+                    f"Default value {type(self.default)} does not match parameter type {self.type}"
+                )
+        self._initialized = True
+
+    # These objects are immutable after instantiation.
+    def __setattr__(self, key, value):
+        if self._initialized:
+            raise AttributeError(f"Cannot modify attribute '{key}' of TaskParameter")
+        super().__setattr__(key, value)
+
+    @property
+    def typename(self) -> str:
+        if hasattr(self.type, '__name__'):
+            return self.type.__name__
+        return str(self.type)
+
+    def str2val(self, s: str) -> Any:
+        if self.type is bool:
+            if s.lower() in ('1', 'true', 'yes', 'on'):
+                val = True
+            elif s.lower() in ('0', 'false', 'no', 'off'):
+                val = False
+            else:
+                raise ValueError(f"Value '{s}' is not of type {self.typename}")
+        else:
+            try:
+                val = self.type(s)
+            except Exception as e:
+                raise ValueError(f"Value '{s}' is not of type {self.typename}") from e
+        return val
+
+
+class TaskParameterBinding:
+    value: Any
+    source: 'TaskParameterBinding.BindingType'
+    task: Optional[str]
+
+    class BindingType(Enum):
+        DEFAULT = 1,
+        COMMAND_LINE = 2,
+        OVERRIDDEN = 3,
+
+    def __init__(self, value, source: BindingType, task=None):
+        self.value = value
+        self.source = source
+        self.task = task
+
+    def __str__(self) -> str:
+        return str(self.value)
+
+
+class Task(ABC, metaclass=TaskMeta):
+    name: str
+    description: str = ''
+    bindings: Dict[str, TaskParameterBinding] = {}
+    inputs: Dict[str, Type['Task']] = {}
+    outputs: Dict[str, Any] = {}
+    parameters: Dict[str, TaskParameter] = {}
+
+    def __init__(self):
+        super().__init__()
+
+        for name, param in self.parameters.items():
+            self.bind({name: param.default},
+                      TaskParameterBinding.BindingType.DEFAULT)
+        for name, val in self.__class__.__dict__.items():
+            if name in self.parameters:
+                self.bind({name: val},
+                          TaskParameterBinding.BindingType.OVERRIDDEN)
+
+    def bind(self, params: Dict[str, Any], source: TaskParameterBinding.BindingType) -> None:
+        for name, param in params.items():
+            if name not in self.parameters:
+                raise ValueError(
+                    f"Task '{self.name}' has no parameter named '{name}'"
+                )
+            self.bindings[name] = TaskParameterBinding(value=param, source=source)
+
+    def _run(self) -> Dict[str, Any]:
+        for name, param in self.bindings.items():
+            setattr(self, name, param.value)
+
+        with chdir(Path.cwd() / self.name):
+            return self.run()
+
+    @abstractmethod
+    def run(self) -> Dict[str, Any]: ...
+
+
+class Config:
+    command_line_parameters: List[str] = []
+    config_file_object: Dict[str, Any] = {}
+    CONFIG_FILE_VERSION = 1
+    config_path: Path
+    max_jobs: int = len(os.sched_getaffinity(0))
+    task_params: Dict[str, Dict[str, Any]] = {}
+    parser: argparse.ArgumentParser
+    task: Type[Task]
+    workdir: Path
+
+    def __init__(self):
+        self.workdir = Path(os.environ.get('BRICOLER_WORKDIR',
+                                           Path.home() / 'bricoler'))
+        self.config_path = Path(self.workdir / 'bricoler.json')
+
+        parser = argparse.ArgumentParser(prog='bricoler')
+        parser.add_argument(
+            '-a', '--alias',
+            action='store',
+            help='define an alias for the current command-line invocation'
+        )
+        parser.add_argument(
+            "-j", "--max-jobs",
+            type=int,
+            metavar='N',
+            default=self.max_jobs,
+            help='set the maximum number of concurrent jobs (default: number of CPUs)'
+        )
+        parser.add_argument(
+            '-l', '--list',
+            action='store_true',
+            help=argparse.SUPPRESS  # only really meant for completion handlers
+        )
+        parser.add_argument(
+            '-s', '--show',
+            action='store_true',
+            help='show all available tasks or task parameters'
+        )
+        parser.add_argument(
+            '-w', '--workdir',
+            metavar='DIR',
+            default=self.workdir,
+            help='set the work directory (default: $BRICOLER_WORKDIR or ${HOME}/bricoler)'
+        )
+        parser.add_argument(
+            'task',
+            nargs='?',
+            help='the task to run'
+        )
+        self.parser = parser
+
+    @property
+    def aliases(self) -> List[Dict[str, Any]]:
+        return self.config_file_object['aliases']
+
+    def add_alias(self, name: str):
+        # Remove an existing alias.  Perhaps we should rename it instead?
+        self.config_file_object['aliases'] = [
+            a for a in self.config_file_object['aliases'] if a['alias'] != name
+        ]
+        self.config_file_object['aliases'].append({
+            "alias": name,
+            "task": self.task.name,
+            "parameters": self.command_line_parameters,
+        })
+        with self.config_path.open('w') as f:
+            json.dump(self.config_file_object, fp=f, indent=4)
+
+    def lookup_alias(self, name: str) -> Optional[Dict[str, Any]]:
+        return next(
+            (a for a in self.config_file_object['aliases'] if a['alias'] == name),
+            None
+        )
+
+    def load(self) -> argparse.Namespace:
+        # Parse global arguments and the task name.
+        opts, args = self.parser.parse_known_args()
+
+        self.workdir.mkdir(parents=True, exist_ok=True)
+
+        # Load aliases from the configuration file.
+        try:
+            f = self.config_path.open('r')
+        except FileNotFoundError:
+            # Populate it with some initial structure.
+            with self.config_path.open('w') as f:
+                json.dump({
+                    "aliases": [],
+                    "version": Config.CONFIG_FILE_VERSION,
+                }, fp=f, indent=4)
+        finally:
+            with self.config_path.open('r') as f:
+                self.config_file_object = json.load(f)
+                version = self.config_file_object.get('version', -1)
+                if version != Config.CONFIG_FILE_VERSION:
+                    raise ValueError(
+                        f"Unknown or unsupported configuration file version: {version}"
+                    )
+
+        if opts.task:
+            task = TaskMeta.lookup(opts.task)
+            if task is None:
+                alias = self.lookup_alias(opts.task)
+                if alias is None:
+                    raise ValueError(f"Unknown task '{opts.task}'")
+                task = TaskMeta.lookup(alias['task'])
+                if task is None:
+                    raise ValueError(
+                        f"Unknown task '{alias['task']}' in alias '{opts.task}'"
+                    )
+                args += [f"--{param}" for param in alias['parameters']]
+            self.task = task
+
+        # Parse task-specific arguments.  These are of the form
+        # --<task>/<param>=<value>.
+        for arg in args:
+            if not arg.startswith('--'):
+                raise ValueError(
+                    f"Task parameters must start with '--': {arg}"
+                )
+            arg = arg[2:]
+            if '=' not in arg:
+                raise ValueError(
+                    f"Task parameters must be of the form --<task>/<param>=<value>: {arg}"
+                )
+            key, val = arg.split('=', 1)
+            if '/' not in key:
+                raise ValueError(
+                    f"Task parameters must be of the form --<task>/<param>=<value>: {arg}"
+                )
+            task_name, param_name = key.split('/', 1)
+            if task_name != self.task.name:
+                raise ValueError(
+                    f"Task parameter '{param_name}' is not for task '{self.task.name}'"
+                )
+            param = self.task.parameters.get(param_name)
+            if param is None:
+                raise ValueError(
+                    f"Task '{task_name}' has no parameter named '{param_name}'"
+                )
+
+            if task_name not in self.task_params:
+                self.task_params[task_name] = {}
+            self.task_params[task_name][param_name] = param.str2val(val)
+            self.command_line_parameters.append(arg)
+
+        return opts
+
+    def usage(self) -> None:
+        # XXX-MJ usage is not very good
+        self.parser.print_usage()
+
+
+class TaskSchedule:
+    class TaskScheduleNode:
+        task: Task
+        children: Dict[str, 'TaskSchedule.TaskScheduleNode']
+
+        def __init__(self, task: Type[Task]):
+            self.task = task()
+            self.children = {}
+            for name, input in task.inputs.items():
+                self.children[name] = TaskSchedule.TaskScheduleNode(input)
+
+        def _bind(self, params: Dict[str, Dict[str, Any]], source):
+            if self.task.name in params:
+                self.task.bind(params[self.task.name], source)
+            for child in self.children.values():
+                child._bind(params, source)
+
+        def _run(self) -> Dict[str, Any]:
+            for input, child in self.children.items():
+                outputs = child._run()
+                inputs = {}
+                for name, val in outputs.items():
+                    inputs[name] = val
+                setattr(self.task, input, SimpleNamespace(**inputs))
+            return self.task._run()
+
+    config: Config
+    schedule: TaskScheduleNode
+
+    def __init__(self, config: Config):
+        self.config = config
+        self.schedule = self.TaskScheduleNode(config.task)
+        self.schedule._bind(config.task_params,
+                            TaskParameterBinding.BindingType.COMMAND_LINE)
+
+    def run(self):
+        with chdir(self.config.workdir):
+            self.schedule._run()
+
+    @property
+    def parameters(self) -> Dict[str, Tuple[TaskParameter, Any]]:
+        """Return a mapping of parameter names to their values in the schedule."""
+        result: Dict[str, Any] = {}
+
+        def _collect(node: TaskSchedule.TaskScheduleNode):
+            for name in node.task.parameters.keys():
+                val = node.task.bindings.get(name, None)
+                result[f"{node.task.name}/{name}"] = (node.task.parameters[name], val)
+
+            for child in node.children.values():
+                _collect(child)
+
+        _collect(self.schedule)
+        return result
+
+    @property
+    def tasks(self) -> Dict[str, Task]:
+        """Return a mapping of task names to task instances in the schedule."""
+        result: Dict[str, Task] = {}
+
+        def _collect(node: TaskSchedule.TaskScheduleNode):
+            result[node.task.name] = node.task
+            for child in node.children.values():
+                _collect(child)
+
+        _collect(self.schedule)
+        return result
+
+    @property
+    def target(self) -> Task:
+        """Return the target task of the schedule."""
+        return self.schedule.task
+
+
+class GitRepository:
+    def __init__(self, url: str, branch: Optional[str] = None):
+        self.url = url
+        self.branch = branch
+        self.skip_clone = url.startswith('/')
+
+    def git(self, args: List[str]):
+        if not self.path:
+            raise ValueError("Repository has not been cloned yet")
+        return run_cmd(
+            ['git', '-C', str(self.path)] + args,
+            capture_output=True
+        )
+
+    def clone(self, path: Path):
+        self.path = path.resolve()
+        if (path / ".git").is_dir():
+            if self.skip_clone:
+                return
+
+            # Already cloned.  Make sure the correct branch is checked out.
+            for name, url in self.remotes.items():
+                if url == self.url:
+                    remote = name
+                    break
+            else:
+                raise ValueError(
+                    f"Clone at '{path}' has no remote corresponding to '{self.url}'"
+                )
+            self.git(["fetch", remote])
+            self.git(["checkout", remote + f"/{self.branch}"])
+        elif self.skip_clone:
+            raise ValueError(
+                f"Repository path '{self.url}' does not exist or is not a repo clone"
+            )
+        else:
+            cmd = ["git", "clone", "--depth=1"]
+            if self.branch:
+                cmd += ["--branch", self.branch]
+            cmd += [self.url, str(path.resolve())]
+            run_cmd(cmd)
+
+    @property
+    def remotes(self) -> Dict[str, str]:
+        result = {}
+        output = self.git(["remote", "-v"])
+        for line in output.stdout.decode().splitlines():
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            name = parts[0]
+            url = parts[1]
+            result[name] = url
+        return result
+
+
+class FreeBSDSrcRepository(GitRepository):
+    def get___FreeBSD_version(self) -> int:
+        file = self.path / 'sys' / 'sys' / 'param.h'
+        with file.open('r') as f:
+            pattern = re.compile(r'^\s*#define\s+__FreeBSD_version\s+(\d+)')
+            for line in f:
+                match = pattern.match(line)
+                if match:
+                    return int(match.group(1))
+            raise ValueError(
+                f"Could not obtain __FreeBSD_version from {file}"
+            )
+
+    def make(self, args: List[str], **kwargs):
+        cmd = ['make', '-C', str(self.path.resolve())] + args
+        return run_cmd(cmd, **kwargs)
+
+    @functools.cache
+    def machine_targets(self) -> List[str]:
+        pattern = re.compile(r'^\s*\w+/\w+$')
+        output = self.make(['targets'], capture_output=True).stdout.decode()
+        targets = []
+        for line in output.splitlines():
+            if pattern.match(line.strip()):
+                targets.append(line.strip())
+        return targets
+
+
+class GitCheckoutTask(Task):
+    name = 'git-checkout'
+
+    parameters = {
+        'url': TaskParameter(
+            description='URL of the Git repository to clone, or a filesystem path',
+            type=str,
+            required=True,
+        ),
+        'branch': TaskParameter(
+            description='Branch to check out',
+            type=str,
+        ),
+    }
+    outputs = {
+        'repo': GitRepository
+    }
+
+    def run(self, *, repotype: Type[GitRepository] = GitRepository):
+        repo = repotype(self.url, self.branch)
+        repo.clone(Path("./src"))
+        return {'repo': repo}
+
+
+class FreeBSDSrcGitCheckoutTask(GitCheckoutTask):
+    name = 'freebsd-src-git-checkout'
+
+    url = 'anongit@git.freebsd.org:src.git'
+    branch = 'main'
+
+    outputs = {
+        'repo': FreeBSDSrcRepository,
+        '__FreeBSD_version': int,
+    }
+
+    def run(self):
+        outputs = super().run(repotype=FreeBSDSrcRepository)
+        outputs['__FreeBSD_version'] = outputs['repo'].get___FreeBSD_version()
+        return outputs
+
+
+class FreeBSDSrcBuildTask(Task):
+    name = 'freebsd-src-build'
+
+    parameters = {
+        'clean': TaskParameter(
+            description='Clean build directories before building',
+            type=bool,
+            default=False,
+        ),
+        'kernel_config': TaskParameter(
+            description='Kernel configuration to build',
+            type=str,
+            default='GENERIC',
+        ),
+        'machine': TaskParameter(
+            description='Target machine architecture',
+            type=str,
+            default=host_machine(),
+        ),
+        'make_targets': TaskParameter(
+            description='Make targets to build',
+            type=str,  # XXX-MJ List[str]
+            default=''
+        ),
+        'objdir': TaskParameter(
+            description='Object directory path for the build',
+            type=Path,  # XXX-MJ default
+        ),
+    }
+
+    inputs = {
+        'src': FreeBSDSrcGitCheckoutTask,
+    }
+
+    outputs = {
+    }
+
+    def run(self):
+        # See if the user specified a valid target platform.
+        if '/' not in self.machine:
+            machine = self.machine
+            machine_arch = ''
+        else:
+            (machine, machine_arch) = self.machine.split('/', maxsplit=1)
+        targets = self.src.repo.machine_targets()
+        if machine_arch == '':
+            matches = [target for target in targets if target.startswith(f"{machine}/")]
+            if len(matches) == 1:
+                machine_arch = matches[0].split('/', maxsplit=1)[1]
+            else:
+                raise ValueError(
+                    f"Multiple architectures found for machine '{machine}': {' '.join(matches)}'"
+                )
+        if f"{machine}/{machine_arch}" not in targets:
+            raise ValueError(
+                f"Unknown target platform: {self.machine}"
+            )
+
+        objdir = self.objdir
+        if objdir is None:
+            objdir = Path(f"./obj.{machine}.{machine_arch}").resolve()
+        objdir.mkdir(parents=True, exist_ok=True)
+
+        stagedir = Path(f"./stage.{machine}.{machine_arch}").resolve()
+        stagedir.mkdir(parents=True, exist_ok=True)
+
+        for target in self.make_targets.split():
+            metalog = stagedir / f"METALOG.{target}.mtree"
+            with open(metalog, 'w') as f:
+                f.truncate(0)
+
+            args = [
+                target,
+                "-ss",
+                "-j", "1",  # XXX-MJ str(self.config.max_jobs)
+                "-DNO_ROOT",
+                "DESTDIR=" + str(stagedir),
+                "METALOG=" + str(metalog),
+                "TARGET=" + machine,
+                "KERNCONF=" + self.kernel_config,
+            ]
+            if self.clean:
+                args.append("WITH_CLEAN=")
+            else:
+                args.append("WITHOUT_CLEAN=")
+
+            env = {
+                "MAKEOBJDIRPREFIX": objdir,
+                "SRCCONF": "/dev/null",
+                "__MAKE_CONF": "/dev/null",
+            }
+
+            self.src.repo.make(args, env=env)
+
+
+def main() -> int:
+    config = Config()
+    try:
+        args = config.load()
+    except ValueError as e:
+        print(f"usage error: {e}")
+        return 1
+
+    if not args.task:
+        if args.show:
+            print("Available tasks:")
+            for task_name in TaskMeta.task_names():
+                print(f"  {task_name}")
+            return 0
+        elif args.list:
+            for task_name in TaskMeta.task_names():
+                print(task_name)
+            for alias in config.aliases:
+                print(alias['alias'])
+            return 0
+        else:
+            config.usage()
+            return 1
+
+    sched = TaskSchedule(config)
+    if args.alias:
+        config.add_alias(args.alias)
+        return 0
+    elif args.show:
+        print(f"{sched.target.name}:")
+        if len(sched.target.description) > 0:
+            print(sched.target.description)
+        else:
+            print("")
+        width = max(len(name) for name in sched.parameters.keys()) + 2
+        for name, param in sched.parameters.items():
+            print(f"{name+':':<{width}} {param[0].description}")
+            print(f"{'':{width+1}}{str(param[1])}")
+        return 0
+    elif args.list:
+        sched = TaskSchedule(config)
+        for task in sched.tasks.values():
+            for name in task.parameters.keys():
+                print(f"{task.name}/{name}")
+        return 0
+    else:
+        sched = TaskSchedule(config)
+        sched.run()
+        return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

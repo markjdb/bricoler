@@ -1,0 +1,2 @@
+check:
+	mypy bricoler
