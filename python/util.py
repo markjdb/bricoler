@@ -9,7 +9,7 @@ import os
 import subprocess
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 
 @contextmanager
@@ -33,8 +33,15 @@ def sysctl(name: str) -> str:
     return result.stdout.strip()
 
 
-def run_cmd(cmd: List[str], *args, env: Optional[Dict[str, str]] = None, **kwargs):
+def run_cmd(
+    cmd: List[Any],
+    *args,
+    env: Optional[Dict[str, str]] = None,
+    check_result: bool = True,
+    **kwargs
+):
     cmd = [str(c) for c in cmd]
+
     if not os.getenv("BRICOLER_ARGCOMPLETE"):
         print(f"EXEC: '{' '.join(cmd)}'")
     if env is not None:
@@ -44,7 +51,7 @@ def run_cmd(cmd: List[str], *args, env: Optional[Dict[str, str]] = None, **kwarg
         assert kwargs.get('env') is None
         kwargs['env'] = env
     result = subprocess.run(cmd, *args, **kwargs, check=True)
-    if result.returncode != 0:
+    if check_result and result.returncode != 0:
         print(f"Command failed: {' '.join(result.stderr)}")
         raise subprocess.CalledProcessError(result.returncode, cmd)
     return result

@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Type, Union
 from git import GitRepository
 from mtree import MtreeFile
 from util import chdir, host_machine, run_cmd
+from vm import VMImage, VMHypervisor, BhyveRun, QEMURun
 
 
 class TaskMeta(ABCMeta):
@@ -446,7 +447,7 @@ class TaskSchedule:
         self.schedule = self.TaskScheduleNode(config.task)
 
         # Preen the schedule.
-        tasks = {}
+        tasks: Dict[str, Task] = {}
         for node in self.schedule:
             if node.task.name in tasks:
                 node.task = tasks[node.task.name]
@@ -547,7 +548,7 @@ class GitCheckoutTask(Task):
         'repo': GitRepository
     }
 
-    def run(self, ctx, repotype=GitRepository):
+    def run(self, ctx, repotype: Type[GitRepository] = GitRepository):
         repo = repotype(self.url, self.branch)
         repo.clone(Path("./src"))
         return {'repo': repo}
@@ -686,7 +687,7 @@ class FreeBSDVMImageFilesystem(Enum):
     ZFS = 'zfs'
 
 
-class FreeBSDVMImage(Task):
+class FreeBSDVMImageTask(Task):
     name = 'freebsd-vm-image'
 
     inputs = {
@@ -695,6 +696,7 @@ class FreeBSDVMImage(Task):
     }
 
     outputs = {
+        'image': VMImage,
         'ssh_key_directory': Path
     }
 
@@ -726,16 +728,29 @@ class FreeBSDVMImage(Task):
         ),
     }
 
-    def run(self, ctx) -> Dict[str, Any]:
-        outputs = {}
-
+    def run(self, ctx):
         machine = self.build.machine
-        mtree: MtreeFile = self.build.metalog
+        metalog: MtreeFile = self.build.metalog
         stagedir = self.build.stagedir
 
-        def add_config_file(path: Union[Path, str], *args, source: Optional[Path] = None):
-            if type(path) is str:
-                path = Path(path)
+        outputs = {}
+
+        # Create ssh keys for the VM.
+        with chdir(Path("ssh-keys")):
+            keyfile = Path("id_ed25519_root").resolve()
+            if not keyfile.is_file():
+                run_cmd(["ssh-keygen", "-t", "ed25519", "-f", str(keyfile), "-N", ""])
+            metalog.add_file(keyfile.with_suffix('.pub'),
+                             Path("root/.ssh/authorized_keys"))
+            outputs['ssh_key_directory'] = Path.cwd()
+
+        def add_config_file(
+            _path: Union[Path, str],
+            *args,
+            source: Optional[Path] = None,
+            comment_delimiter: str = "#",
+        ):
+            path = Path(_path)
             if source is not None:
                 shutil.copyfile(source, path)
                 mode = "a"
@@ -743,19 +758,10 @@ class FreeBSDVMImage(Task):
                 mode = "w"
             path.parent.mkdir(parents=True, exist_ok=True)
             with path.open(mode) as f:
-                f.write("# Added by bricoler\n")
+                f.write(f"{comment_delimiter} Added by bricoler\n")
                 contents = [textwrap.dedent(arg).strip() for arg in args if arg != ""]
                 f.write(str.join("\n", contents) + "\n")
-            mtree.add_file(path.resolve(), path)
-
-        # Create ssh keys for the VM.
-        with chdir(Path("ssh-keys")):
-            keyfile = Path("id_ed25519_root").resolve()
-            if not keyfile.is_file():
-                run_cmd(["ssh-keygen", "-t", "ed25519", "-f", str(keyfile), "-N", ""])
-            mtree.add_file(keyfile.with_suffix('.pub'),
-                           Path("root/.ssh/authorized_keys"))
-            outputs['ssh_key_directory'] = Path.cwd()
+            metalog.add_file(path.resolve(), path)
 
         add_config_file("etc/ssh/sshd_config",
                         "PermitRootLogin without-password",
@@ -786,11 +792,11 @@ class FreeBSDVMImage(Task):
                         *[tunable for tunable in self.loader_tunables.split()])
 
         metalog_path = Path("METALOG.mtree").resolve()
-        mtree.write(metalog_path)
+        metalog.write(metalog_path)
 
         image_prefix = f"image.{self.build.machine.replace('/', '.')}"
         esp_image_path = Path(f"{image_prefix}-esp.fs").resolve()
-        fs_image_path = Path(f"{image_prefix}.{self.filesystem.name}").resolve()
+        fs_image_path = Path(f"{image_prefix}.{self.filesystem.value}").resolve()
         vm_image_path = Path(f"{image_prefix}.img").resolve()
 
         makefs_cmd = ["makefs"]
@@ -811,13 +817,14 @@ class FreeBSDVMImage(Task):
         has_efi = not (machine.startswith('i386/') or machine.startswith('powerpc/'))
         if has_efi:
             efi_loaders = {
-                'amd64': "bootx86.efi",
+                'amd64': "bootx64.efi",
                 'arm': "bootarm.efi",
                 'arm64': "bootaa64.efi",
                 'riscv': "bootriscv64.efi",
             }
             esp_dir = Path(image_prefix + "-efi")
-            with chdir(esp_dir / "BOOT/EFI"):
+            shutil.rmtree(esp_dir, ignore_errors=True)
+            with chdir(esp_dir / "EFI/BOOT"):
                 efi_loader = efi_loaders[machine.split('/')[0]]
                 shutil.copyfile(stagedir / "boot/loader.efi", Path(efi_loader))
 
@@ -860,14 +867,62 @@ class FreeBSDVMImage(Task):
                 ]
             mkimg_cmd += [
                 "-p", f"freebsd-swap/swap::{self.swap_size}",
-                "-p", f"freebsd-{self.filesystem.name}/rootfs:={fs_image_path}",
+                "-p", f"freebsd-{self.filesystem.value}/rootfs:={fs_image_path}",
             ]
 
         run_cmd(mkimg_cmd)
 
+        outputs['image'] = VMImage(vm_image_path, machine)
+
         return outputs
 
 
+class FreeBSDVMBootTask(Task):
+    name = 'freebsd-vm-boot'
+
+    inputs = {
+        'vm_image': FreeBSDVMImageTask,
+    }
+
+    parameters = {
+        'hypervisor': TaskParameter(
+            description='Hypervisor to use for running the VM',
+            type=VMHypervisor,
+            default=VMHypervisor.QEMU,
+        ),
+        'memory': TaskParameter(
+            description='Amount of memory to allocate to the VM',
+            type=str,
+            default="2048M",
+        ),
+        'ncpus': TaskParameter(
+            description='Number of CPUs to allocate to the VM',
+            type=int,
+            default=2,
+        ),
+    }
+
+    def run(self, ctx):
+        cls = QEMURun if self.hypervisor == VMHypervisor.QEMU else BhyveRun
+        vmrun = cls(
+            image=self.vm_image.image,
+            memory=self.memory,
+            ncpus=self.ncpus,
+        )
+        cmd = vmrun.setup()
+        run_cmd(cmd)
+
+        return {}
+
+
+#
+# Features to add:
+# - automatic bisection for build and test failures
+# - sending mail upon completion of a task
+#   - or, e.g., when syzkaller finds a new report
+# - ability to skip dependent tasks
+# - tasks to cross-build package repos
+#
 def main() -> int:
     config = Config()
     try:
