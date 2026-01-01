@@ -120,7 +120,7 @@ class BhyveRun(VMRun):
 
         bhyve_cmd.extend(["bricoler"])
 
-        return bhyve_cmd
+        return [str(a) for a in bhyve_cmd]
 
 
 class QEMURun(VMRun):
@@ -159,6 +159,7 @@ class QEMURun(VMRun):
         qemu_cmd = [
             qemu_executable,
             "-nographic",
+            "-no-reboot",
             "-m", self.memory,
             "-smp", self.ncpus,
             "-bios", self.bios_path(),
@@ -167,4 +168,4 @@ class QEMURun(VMRun):
             "-drive", f"file={self.image.path},if=none,id=image,format=raw",
         ]
 
-        return qemu_cmd
+        return [str(a) for a in qemu_cmd]

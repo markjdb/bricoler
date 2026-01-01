@@ -21,6 +21,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Set, Tuple, Type, Union
 
+import pexpect
+
 from git import GitRepository
 from mtree import MtreeFile
 from util import chdir, host_machine, run_cmd
@@ -202,16 +204,17 @@ class TaskParameterBinding:
 
 
 class Task(ABC, metaclass=TaskMeta):
-    bindings: Dict[str, TaskParameterBinding] = {}
+    bindings: Dict[str, TaskParameterBinding]
     _final_outputs: Optional[Dict[str, Any]] = None
     name: str
     description: str = ''
     inputs: Dict[str, Type['Task']] = {}
     outputs: Dict[str, Any] = {}
-    parameters: Dict[str, TaskParameter] = {}
+    parameters: Dict[str, TaskParameter]
 
     def __init__(self):
         super().__init__()
+        self.bindings = {}
         self._finished = False
 
         for name, param in self.parameters.items():
@@ -392,11 +395,12 @@ class Config:
                     f"Task parameters must be of the form --<task>/<param>=<value>: {arg}"
                 )
             task_name, param_name = key.split('/', 1)
-            if task_name != self.task.name:
+            task = TaskMeta.lookup(task_name)
+            if task is None:
                 raise ValueError(
-                    f"Task parameter '{param_name}' is not for task '{self.task.name}'"
+                    f"Unknown task '{task_name}' in parameter '{arg}'"
                 )
-            param = self.task.parameters.get(param_name)
+            param = task.parameters.get(param_name)
             if param is None:
                 raise ValueError(
                     f"Task '{task_name}' has no parameter named '{param_name}'"
@@ -455,12 +459,19 @@ class TaskSchedule:
                 tasks[node.task.name] = node.task
 
         # Bind command-line parameters.
+        params = config.task_params.copy()
         for node in self.schedule:
-            if node.task.name in config.task_params:
+            if node.task.name in params:
                 node.task.bind(
-                    config.task_params[node.task.name],
+                    params[node.task.name],
                     TaskParameterBinding.BindingType.COMMAND_LINE
                 )
+                del params[node.task.name]
+        if len(params) > 0:
+            unknown_tasks = ', '.join(params.keys())
+            raise ValueError(
+                f"Unknown tasks in command-line parameters: {unknown_tasks}"
+            )
 
     def run(self):
         ctx = SimpleNamespace(max_jobs=self.config.max_jobs)
@@ -599,6 +610,10 @@ class FreeBSDSrcBuildTask(Task):
             description='Object directory path for the build',
             type=Path,  # XXX-MJ default must be computed after some partial eval
         ),
+        'toolchain': TaskParameter(
+            description='Toolchain to use for the build',
+            type=str,
+        ),
     }
 
     inputs = {
@@ -660,6 +675,8 @@ class FreeBSDSrcBuildTask(Task):
                 args.append("WITH_CLEAN=")
             else:
                 args.append("WITHOUT_CLEAN=")
+            if self.toolchain is not None:
+                args.append(f"CROSS_TOOLCHAIN={self.toolchain}")
 
             env = {
                 "MAKEOBJDIRPREFIX": objdir,
@@ -791,13 +808,13 @@ class FreeBSDVMImageTask(Task):
                         "zfs_load=YES" if self.filesystem == FreeBSDVMImageFilesystem.ZFS else "",
                         *[tunable for tunable in self.loader_tunables.split()])
 
-        metalog_path = Path("METALOG.mtree").resolve()
+        metalog_path = Path.cwd() / "METALOG.mtree"
         metalog.write(metalog_path)
 
         image_prefix = f"image.{self.build.machine.replace('/', '.')}"
-        esp_image_path = Path(f"{image_prefix}-esp.fs").resolve()
-        fs_image_path = Path(f"{image_prefix}.{self.filesystem.value}").resolve()
-        vm_image_path = Path(f"{image_prefix}.img").resolve()
+        esp_image_path = Path.cwd() / f"{image_prefix}-esp.fs"
+        fs_image_path = Path.cwd() / f"{image_prefix}.{self.filesystem.value}"
+        vm_image_path = Path.cwd() / f"{image_prefix}.img"
 
         makefs_cmd = ["makefs"]
         if self.filesystem == FreeBSDVMImageFilesystem.UFS:
@@ -890,6 +907,11 @@ class FreeBSDVMBootTask(Task):
             type=VMHypervisor,
             default=VMHypervisor.QEMU,
         ),
+        'interactive': TaskParameter(
+            description='Run the VM in interactive mode',
+            type=bool,
+            default=True,
+        ),
         'memory': TaskParameter(
             description='Amount of memory to allocate to the VM',
             type=str,
@@ -899,6 +921,11 @@ class FreeBSDVMBootTask(Task):
             description='Number of CPUs to allocate to the VM',
             type=int,
             default=2,
+        ),
+        'reboot': TaskParameter(
+            description='Restart the VM when it exits due to a reboot',
+            type=bool,
+            default=False,
         ),
     }
 
@@ -910,7 +937,16 @@ class FreeBSDVMBootTask(Task):
             ncpus=self.ncpus,
         )
         cmd = vmrun.setup()
-        run_cmd(cmd)
+        if self.interactive:
+            run_cmd(cmd)
+        else:
+            child = pexpect.spawn(' '.join(cmd), logfile=sys.stdout.buffer, timeout=300)
+            patterns = ["login:", "panic:"]
+            pattern = child.expect_exact(patterns)
+            if pattern == 1:
+                raise RuntimeError("VM panicked during boot")
+            child.sendline("root")
+            child.expect("root@.*#")
 
         return {}
 

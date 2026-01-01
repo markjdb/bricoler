@@ -6,6 +6,7 @@
 
 from pathlib import Path
 from typing import Dict, List, Optional
+from urllib.parse import urlparse
 
 from util import run_cmd
 
@@ -14,7 +15,12 @@ class GitRepository:
     def __init__(self, url: str, branch: Optional[str] = None):
         self.url = url
         self.branch = branch
-        self.skip_clone = url.startswith('/')
+
+        # If the URL has no scheme, assume it's a local path and skip cloning.
+        parsed = urlparse(url)
+        self.skip_clone = parsed.scheme == ''
+        if self.skip_clone:
+            self.url = self.path = Path(url).resolve()
 
     def git(self, args: List[str]):
         if not self.path:
@@ -25,7 +31,6 @@ class GitRepository:
         )
 
     def clone(self, path: Path):
-        self.path = path.resolve()
         if (path / ".git").is_dir():
             if self.skip_clone:
                 return
@@ -51,6 +56,7 @@ class GitRepository:
                 cmd += ["--branch", self.branch]
             cmd += [self.url, str(path.resolve())]
             run_cmd(cmd)
+        self.path = path.resolve()
 
     @property
     def remotes(self) -> Dict[str, str]:
