@@ -12,56 +12,78 @@ from util import run_cmd
 
 
 class GitRepository:
-    def __init__(self, url: str, branch: Optional[str] = None):
+    @staticmethod
+    def is_ssh_url(url: str) -> bool:
+        # Simple check for SSH-style Git URLs.  This doesn't match git's exact
+        # behaviour but it seems close enough that it won't matter.
+        colon = url.find(':')
+        if colon == -1:
+            return False
+        slash = url.find('/')
+        return slash == -1 or colon < slash
+
+    def __init__(
+        self,
+        url: str,
+        path: Path,
+        branch: Optional[str] = None,
+        no_cmds: bool = False,
+    ):
         self.url = url
         self.branch = branch
+        self._no_cmds = no_cmds
 
-        # If the URL has no scheme, assume it's a local path and skip cloning.
         parsed = urlparse(url)
-        self.skip_clone = parsed.scheme == ''
-        if self.skip_clone:
+        if parsed.scheme == '' and not self.is_ssh_url(url):
             self.url = self.path = Path(url).resolve()
+        else:
+            self.path = path.resolve()
+        self.clone()
 
-    def git(self, args: List[str]):
+    def git(self, cmd: List[str], *args, **kwargs):
         if not self.path:
             raise ValueError("Repository has not been cloned yet")
-        return run_cmd(
-            ['git', '-C', self.path] + args,
-            capture_output=True
-        )
+        return run_cmd(['git', '-C', self.path] + cmd, *args, **kwargs)
 
-    def clone(self, path: Path):
-        if (path / ".git").is_dir():
-            if self.skip_clone:
-                return
-
-            # Already cloned.  Make sure the correct branch is checked out.
-            for name, url in self.remotes.items():
-                if url == self.url:
-                    remote = name
-                    break
-            else:
+    def clone(self):
+        if self.path == self.url:
+            # This repository is externally managed.
+            if not (self.path / ".git").is_dir():
                 raise ValueError(
-                    f"Clone at '{path}' has no remote corresponding to '{self.url}'"
+                    f"Repository path '{self.url}' does not exist or is not a repo clone"
                 )
-            self.git(["fetch", remote])
-            self.git(["checkout", f"{remote}/{self.branch}"])
-        elif self.skip_clone:
-            raise ValueError(
-                f"Repository path '{self.url}' does not exist or is not a repo clone"
-            )
-        else:
+            return
+        if not (self.path / ".git").exists():
             cmd = ["git", "clone", "--depth=1"]
             if self.branch:
                 cmd += ["--branch", self.branch]
-            cmd += [self.url, str(path.resolve())]
+            cmd += [self.url, str(self.path.resolve())]
             run_cmd(cmd)
-        self.path = path.resolve()
+
+    def update(self):
+        assert self.path is not None
+        if self.path == self.url:
+            # This repository is externally managed.
+            return
+        if self._no_cmds:
+            return
+
+        for name, url in self.remotes.items():
+            if url == self.url:
+                remote = name
+                break
+        else:
+            raise ValueError(
+                f"Clone at '{self.path}' has no remote corresponding to '{self.url}'"
+            )
+        self.git(["fetch", remote])
+        self.git(["checkout", f"{self.branch}"])
+        self.git(["merge", "--ff-only", remote, f"{self.branch}"])
 
     @property
     def remotes(self) -> Dict[str, str]:
         result = {}
-        output = self.git(["remote", "-v"])
+        output = self.git(["remote", "-v"], capture_output=True)
         for line in output.stdout.decode().splitlines():
             parts = line.split()
             if len(parts) < 2:
@@ -70,3 +92,8 @@ class GitRepository:
             url = parts[1]
             result[name] = url
         return result
+
+    @property
+    def revision(self) -> str:
+        output = self.git(["rev-parse", "HEAD"])
+        return output.stdout.decode().strip()

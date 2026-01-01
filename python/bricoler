@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import textwrap
 from abc import ABC, ABCMeta, abstractmethod
@@ -33,12 +34,14 @@ class TaskMeta(ABCMeta):
     _registry: Dict[str, Type['Task']] = {}
     _reserved_names: Set[str] = {
         'bindings',
+        'config',
         'description',
         'inputs',
         'name',
         'outputs',
         'parameters',
-        'run'
+        'run',
+        'skip',
     }
 
     @classmethod
@@ -51,7 +54,7 @@ class TaskMeta(ABCMeta):
             )
 
         # Any members must be a parameter type.
-        parameters = getattr(cls, 'parameters')
+        parameters = getattr(cls, 'parameters', {})
         for name in namespace.keys():
             if name.startswith('_'):
                 continue
@@ -205,16 +208,19 @@ class TaskParameterBinding:
 
 class Task(ABC, metaclass=TaskMeta):
     bindings: Dict[str, TaskParameterBinding]
+    config: Type['Config']
     _final_outputs: Optional[Dict[str, Any]] = None
     name: str
     description: str = ''
     inputs: Dict[str, Type['Task']] = {}
     outputs: Dict[str, Any] = {}
-    parameters: Dict[str, TaskParameter]
+    parameters: Dict[str, TaskParameter] = {}
+    skip: bool = False
 
-    def __init__(self):
+    def __init__(self, config: Type['Config']):
         super().__init__()
         self.bindings = {}
+        self.config = config
         self._finished = False
 
         for name, param in self.parameters.items():
@@ -259,6 +265,9 @@ class Task(ABC, metaclass=TaskMeta):
             self._final_outputs = outputs
             return outputs
 
+    def run_cmd(self, cmd: List[Any], *args, **kwargs) -> subprocess.CompletedProcess:
+        return run_cmd(cmd, *args, skip=self.skip, **kwargs)
+
     @abstractmethod
     def run(self, ctx) -> Dict[str, Any]: ...
 
@@ -269,9 +278,10 @@ class Config:
     CONFIG_FILE_VERSION = 1
     config_path: Path
     max_jobs: int = len(os.sched_getaffinity(0))
-    task_params: Dict[str, Dict[str, Any]] = {}
     parser: argparse.ArgumentParser
+    skip: bool
     task: Type[Task]
+    task_params: Dict[str, Dict[str, Any]] = {}
     workdir: Path
 
     def __init__(self):
@@ -283,36 +293,34 @@ class Config:
         parser.add_argument(
             '-a', '--alias',
             action='store',
-            help='define an alias for the current command-line invocation'
-        )
+            help='define an alias for the current command-line invocation')
         parser.add_argument(
             "-j", "--max-jobs",
             type=int,
             metavar='N',
             default=self.max_jobs,
-            help='set the maximum number of concurrent jobs (default: number of CPUs)'
-        )
+            help='set the maximum number of concurrent jobs (default: number of CPUs)')
         parser.add_argument(
             '-l', '--list',
             action='store_true',
-            help=argparse.SUPPRESS  # only really meant for completion handlers
-        )
+            help=argparse.SUPPRESS)  # only really meant for completion handlers
         parser.add_argument(
             '-s', '--show',
             action='store_true',
-            help='show all available tasks or task parameters'
-        )
+            help='show all available tasks or task parameters')
+        parser.add_argument(
+            '-S', '--skip',
+            action='store_true',
+            help='skip execution of dependent tasks')
         parser.add_argument(
             '-w', '--workdir',
             metavar='DIR',
             default=self.workdir,
-            help='set the work directory (default: $BRICOLER_WORKDIR or ${HOME}/bricoler)'
-        )
+            help='set the work directory (default: $BRICOLER_WORKDIR or ${HOME}/bricoler)')
         parser.add_argument(
             'task',
             nargs='?',
-            help='the task to run'
-        )
+            help='the task to run')
         self.parser = parser
 
     @property
@@ -342,6 +350,7 @@ class Config:
         # Parse global arguments and the task name.
         opts, args = self.parser.parse_known_args()
 
+        self.skip = opts.skip
         self.workdir.mkdir(parents=True, exist_ok=True)
 
         # Load aliases from the configuration file.
@@ -423,11 +432,11 @@ class TaskSchedule:
         task: Task
         children: Dict[str, 'TaskSchedule.TaskScheduleNode']
 
-        def __init__(self, task: Type[Task]):
-            self.task = task()
+        def __init__(self, task: Type[Task], config: Config):
+            self.task = task(config)
             self.children = {}
             for name, input in task.inputs.items():
-                self.children[name] = TaskSchedule.TaskScheduleNode(input)
+                self.children[name] = TaskSchedule.TaskScheduleNode(input, config)
 
         def _run(self, ctx: SimpleNamespace) -> Dict[str, Any]:
             for input, child in self.children.items():
@@ -448,9 +457,9 @@ class TaskSchedule:
 
     def __init__(self, config: Config):
         self.config = config
-        self.schedule = self.TaskScheduleNode(config.task)
+        self.schedule = self.TaskScheduleNode(config.task, config)
 
-        # Preen the schedule.
+        # Preen the schedule.  We only keep one instance of each task.
         tasks: Dict[str, Task] = {}
         for node in self.schedule:
             if node.task.name in tasks:
@@ -472,6 +481,12 @@ class TaskSchedule:
             raise ValueError(
                 f"Unknown tasks in command-line parameters: {unknown_tasks}"
             )
+
+        # Mark dependent tasks to be skipped.
+        if self.config.skip:
+            for node in self.schedule:
+                if node != self.schedule:
+                    node.task.skip = True
 
     def run(self):
         ctx = SimpleNamespace(max_jobs=self.config.max_jobs)
@@ -528,7 +543,9 @@ class FreeBSDSrcRepository(GitRepository):
 
     def make(self, args: List[str], **kwargs):
         cmd = ['make', '-C', self.path.resolve()] + args
-        return run_cmd(cmd, **kwargs)
+        # Don't skip the command if we need to capture output.
+        skip = self._no_cmds and not kwargs.get('capture_output', False)
+        return run_cmd(cmd, skip=skip, **kwargs)
 
     @functools.cache
     def machine_targets(self) -> List[str]:
@@ -560,8 +577,8 @@ class GitCheckoutTask(Task):
     }
 
     def run(self, ctx, repotype: Type[GitRepository] = GitRepository):
-        repo = repotype(self.url, self.branch)
-        repo.clone(Path("./src"))
+        repo = repotype(self.url, Path("./src"), self.branch, no_cmds=self.skip)
+        repo.update()
         return {'repo': repo}
 
 
@@ -753,20 +770,22 @@ class FreeBSDVMImageTask(Task):
         outputs = {}
 
         # Create ssh keys for the VM.
-        with chdir(Path("ssh-keys")):
+        outputs['ssh_key_directory'] = Path("./ssh-keys").resolve()
+        with chdir(outputs['ssh_key_directory']):
             keyfile = Path("id_ed25519_root").resolve()
             if not keyfile.is_file():
-                run_cmd(["ssh-keygen", "-t", "ed25519", "-f", str(keyfile), "-N", ""])
+                self.run_cmd(["ssh-keygen", "-t", "ed25519", "-f", str(keyfile), "-N", ""])
             metalog.add_file(keyfile.with_suffix('.pub'),
                              Path("root/.ssh/authorized_keys"))
-            outputs['ssh_key_directory'] = Path.cwd()
 
         def add_config_file(
             _path: Union[Path, str],
             *args,
             source: Optional[Path] = None,
             comment_delimiter: str = "#",
-        ):
+        ) -> None:
+            if self.skip:
+                return
             path = Path(_path)
             if source is not None:
                 shutil.copyfile(source, path)
@@ -829,7 +848,7 @@ class FreeBSDVMImageTask(Task):
         ]
 
         with chdir(stagedir):
-            run_cmd(makefs_cmd)
+            self.run_cmd(makefs_cmd)
 
         has_efi = not (machine.startswith('i386/') or machine.startswith('powerpc/'))
         if has_efi:
@@ -855,7 +874,7 @@ class FreeBSDVMImageTask(Task):
                 esp_image_path,
                 esp_dir,
             ]
-            run_cmd(makefs_cmd)
+            self.run_cmd(makefs_cmd)
 
         bootdir = stagedir / "boot"
         mkimg_cmd = [
@@ -887,7 +906,7 @@ class FreeBSDVMImageTask(Task):
                 "-p", f"freebsd-{self.filesystem.value}/rootfs:={fs_image_path}",
             ]
 
-        run_cmd(mkimg_cmd)
+        self.run_cmd(mkimg_cmd)
 
         outputs['image'] = VMImage(vm_image_path, machine)
 
@@ -938,7 +957,7 @@ class FreeBSDVMBootTask(Task):
         )
         cmd = vmrun.setup()
         if self.interactive:
-            run_cmd(cmd)
+            self.run_cmd(cmd)
         else:
             child = pexpect.spawn(' '.join(cmd), logfile=sys.stdout.buffer, timeout=300)
             patterns = ["login:", "panic:"]
@@ -985,11 +1004,12 @@ def main() -> int:
             config.usage()
             return 1
 
-    sched = TaskSchedule(config)
     if args.alias:
         config.add_alias(args.alias)
         return 0
-    elif args.show:
+
+    sched = TaskSchedule(config)
+    if args.show:
         print(f"{sched.target.name}:")
         if len(sched.target.description) > 0:
             print(sched.target.description)
@@ -1001,13 +1021,11 @@ def main() -> int:
             print(f"{'':{width+1}}{str(param[1])}")
         return 0
     elif args.list:
-        sched = TaskSchedule(config)
         for task in sched.tasks.values():
             for name in task.parameters.keys():
                 print(f"{task.name}/{name}")
         return 0
     else:
-        sched = TaskSchedule(config)
         sched.run()
         return 0
 

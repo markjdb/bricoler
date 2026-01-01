@@ -38,12 +38,18 @@ def run_cmd(
     *args,
     env: Optional[Dict[str, str]] = None,
     check_result: bool = True,
+    skip: bool = False,
     **kwargs
 ):
     cmd = [str(c) for c in cmd]
-
-    if not os.getenv("BRICOLER_ARGCOMPLETE"):
-        print(f"EXEC: '{' '.join(cmd)}'")
+    cmdstr = ' '.join(cmd)
+    log = not kwargs.get('capture_output', False)
+    if skip:
+        if log:
+            print(f"EXEC(skipped): '{cmdstr}'")
+        return subprocess.CompletedProcess(cmd, 0)
+    if log:
+        print(f"EXEC: '{cmdstr}'")
     if env is not None:
         tmp = os.environ.copy()
         tmp.update(env)
