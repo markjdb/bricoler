@@ -137,6 +137,7 @@ class QEMURun(VMRun):
             # XXX-MJ add some dict type which automatically checks for the path
             #        and suggests some recourse if it's not available
             'amd64': Path("/usr/local/share/edk2-qemu/QEMU_UEFI-x86_64.fd"),
+            'arm64': Path("/usr/local/share/qemu/edk2-aarch64-code.fd"),
         }
         return bioses[self.image.machine.split('/', maxsplit=1)[0]]
 
@@ -149,6 +150,12 @@ class QEMURun(VMRun):
                 f"Unsupported block driver {driver} is not supported by QEMU"
             )
 
+    def machine_type(self) -> str:
+        machines = {
+            'arm64': 'virt,gic-version=3',
+        }
+        return machines.get(self.image.machine.split('/', maxsplit=1)[0], None)
+
     def setup(self) -> List[Any]:
         qemu_executable = self.executables.get(self.image.machine.split('/')[0])
         if qemu_executable is None:
@@ -160,6 +167,7 @@ class QEMURun(VMRun):
             qemu_executable,
             "-nographic",
             "-no-reboot",
+            "-cpu", "max",
             "-m", self.memory,
             "-smp", self.ncpus,
             "-bios", self.bios_path(),
@@ -167,5 +175,8 @@ class QEMURun(VMRun):
             "-device", f"{self.block_driver_name()},drive=image",
             "-drive", f"file={self.image.path},if=none,id=image,format=raw",
         ]
+        machine_type = self.machine_type()
+        if machine_type is not None:
+            qemu_cmd.extend(["-M", machine_type])
 
         return [str(a) for a in qemu_cmd]
