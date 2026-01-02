@@ -7,6 +7,7 @@
 import argparse
 import json
 import os
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -21,10 +22,11 @@ class Config:
     skip: bool
     task_params: Dict[str, Dict[str, Any]] = {}
     workdir: Path
+    uuid: uuid.UUID
 
     def __init__(self):
         self.workdir = Path(os.environ.get('BRICOLER_WORKDIR',
-                                           Path.home() / 'bricoler'))
+                                           Path.home() / 'bricoler')).resolve()
         self.config_path = Path(self.workdir / 'bricoler.json')
 
         parser = argparse.ArgumentParser(prog='bricoler')
@@ -99,16 +101,29 @@ class Config:
             with self.config_path.open('w') as f:
                 json.dump({
                     "aliases": [],
+                    "uuid": str(uuid.uuid4()),
                     "version": Config.CONFIG_FILE_VERSION,
                 }, fp=f, indent=4)
         finally:
             with self.config_path.open('r') as f:
-                self.config_file_object = json.load(f)
+                try:
+                    self.config_file_object = json.load(f)
+                except json.JSONDecodeError as e:
+                    raise ValueError(
+                        f"Configuration file '{self.config_path}' is not valid JSON: {e}"
+                    ) from e
+
                 version = self.config_file_object.get('version', -1)
                 if version != Config.CONFIG_FILE_VERSION:
                     raise ValueError(
                         f"Unknown or unsupported configuration file version: {version}"
                     )
+                try:
+                    self.uuid = uuid.UUID(self.config_file_object.get('uuid', ""))
+                except ValueError as e:
+                    raise ValueError(
+                        f"Configuration file '{self.config_path}' has invalid UUID: {e}"
+                    ) from e
 
         if opts.task:
             task = lookup(opts.task)
@@ -125,7 +140,9 @@ class Config:
             self.task = task
 
         # Parse task-specific arguments.  These are of the form
-        # --<task>/<param>=<value>.
+        # --<task>/<param>=<value>.  At some point we want to support
+        # <param>+=<value> to augment default values instead of replacing them,
+        # and <param>@=<filename> to read values from a file.
         for arg in args:
             if not arg.startswith('--'):
                 raise ValueError(
@@ -147,7 +164,7 @@ class Config:
                 raise ValueError(
                     f"Unknown task '{task_name}' in parameter '{arg}'"
                 )
-            param = task.parameters.get(param_name)
+            param = task.get_parameter(param_name)
             if param is None:
                 raise ValueError(
                     f"Task '{task_name}' has no parameter named '{param_name}'"

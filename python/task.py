@@ -4,9 +4,24 @@
 # SPDX-License-Identifier: BSD-2-Clause
 #
 
+#
+# A task represents a composable unit of work in the bricoler framework.  They
+# are all defined as a subclass of the Task class.  In general they declare
+# parameters, inputs and outputs, and implement a run() method which performs
+# the work of the task.
+#
+# Tasks can have a name or be anonymous.  Anonymous tasks are not directly
+# invokable or otherwise visible in the UI, but can be used to factor out common
+# functionality and parameters.
+#
+# Tasks can inherit from other tasks.
+# XXX-MJ need some magic to compose parameters
+#
+
 import inspect
 import subprocess
 from abc import ABC, ABCMeta, abstractmethod
+from collections import ChainMap
 from enum import Enum
 from pathlib import Path
 from types import SimpleNamespace
@@ -32,6 +47,11 @@ class TaskMeta(ABCMeta):
 
     @classmethod
     def _validate_common(mcs, cls: Type['Task'], namespace) -> None:
+        # Task class names must end with 'Task'.
+        if not cls.__name__.endswith('Task'):
+            raise ValueError(
+                f"Task class name '{cls.__name__}' must end with 'Task'"
+            )
         # No bindings should be defined initially, they are added once we
         # instantiate tasks and bind parameters.
         if len(getattr(cls, 'bindings', {})) > 0:
@@ -102,6 +122,12 @@ class TaskMeta(ABCMeta):
 
     def __new__(mcs, name, bases, namespace):
         cls = super().__new__(mcs, name, bases, namespace)
+
+        parent_parameters = [
+            b._merged_parameters for b in bases if hasattr(b, '_merged_parameters')
+        ]
+        cls._merged_parameters = ChainMap(cls.parameters, *parent_parameters)
+
         if not inspect.isabstract(cls):
             task_name = namespace.get('name')
             if task_name is not None:
@@ -124,17 +150,23 @@ class TaskParameter:
     choices: Optional[List[Any]] = None
     default: Any
     description: str
+    _initialized = False
     required: bool
     type: Any
 
-    _initialized = False
-
-    def __init__(self, **kwargs):
-        self.description = kwargs['description']
-        self.type = kwargs.get('type')
-        self.default = kwargs.get('default', None)
-        self.required = self.default is None
-        self.choices = kwargs.get('choices', None)
+    def __init__(
+        self,
+        description: str = '',
+        type: type = str,
+        default: Any = None,
+        choices: Optional[List[Any]] = None,
+        required: bool = False,
+    ):
+        self.description = description
+        self.type = type
+        self.default = default
+        self.choices = choices
+        self.required = required
 
         if self.default is not None:
             while callable(self.default):
@@ -145,9 +177,9 @@ class TaskParameter:
                 )
         self._initialized = True
 
-    # These objects are immutable after instantiation.
     def __setattr__(self, key, value):
         if self._initialized:
+            # These objects are immutable after instantiation.
             raise AttributeError(f"Cannot modify attribute '{key}' of TaskParameter")
         super().__setattr__(key, value)
 
@@ -194,36 +226,44 @@ class TaskParameterBinding:
 
 class Task(ABC, metaclass=TaskMeta):
     bindings: Dict[str, TaskParameterBinding]
-    config: Type['Config']
+    config: Config
     _final_outputs: Optional[Dict[str, Any]] = None
     name: str
     description: str = ''
     inputs: Dict[str, Type['Task']] = {}
     outputs: Dict[str, Any] = {}
     parameters: Dict[str, TaskParameter] = {}
+    _merged_parameters: ChainMap[str, TaskParameter]
     skip: bool = False
 
-    def __init__(self, config: Type['Config']):
+    def __init__(self, config: Config):
         super().__init__()
         self.bindings = {}
         self.config = config
         self._finished = False
 
-        for name, param in self.parameters.items():
+        for name, param in self._merged_parameters.items():
             self.bind({name: param.default},
                       TaskParameterBinding.BindingType.DEFAULT)
         for name, val in self.__class__.__dict__.items():
-            if name in self.parameters:
+            if name in self._merged_parameters:
                 self.bind({name: val},
                           TaskParameterBinding.BindingType.OVERRIDDEN)
 
     def bind(self, params: Dict[str, Any], source: TaskParameterBinding.BindingType) -> None:
         for name, param in params.items():
-            if name not in self.parameters:
+            if name not in self._merged_parameters:
                 raise ValueError(
                     f"Task '{self.name}' has no parameter named '{name}'"
                 )
             self.bindings[name] = TaskParameterBinding(value=param, source=source)
+
+    @classmethod
+    def get_parameter(self, name: str) -> TaskParameter:
+        return self._merged_parameters[name]
+
+    def get_parameter_keys(self) -> List[str]:
+        return list(self._merged_parameters.keys())
 
     def _run(self, ctx: SimpleNamespace) -> Dict[str, Any]:
         if self._final_outputs is not None:
@@ -320,6 +360,22 @@ class TaskSchedule:
                     node.task.skip = True
 
     def run(self):
+        # Do any tasks have unbound required parameters?  Raise an error if so.
+        # We check this here rather than in the constructor so that it's possible
+        # to do things like list unbound parameters in a schedule.
+        for node in self.schedule:
+            required = {
+                name for name, param in node.task._merged_parameters.items() if param.required
+            }
+            bindings = {
+                name for name, param in node.task.bindings.items() if param.value is not None
+            }
+            missing = required - bindings
+            if len(missing) > 0:
+                raise ValueError(
+                    f"Task '{node.task.name}' is missing required parameters: {', '.join(missing)}"
+                )
+
         ctx = SimpleNamespace(max_jobs=self.config.max_jobs)
         with chdir(self.config.workdir):
             self.schedule._run(ctx)
@@ -330,9 +386,11 @@ class TaskSchedule:
         result: Dict[str, Any] = {}
 
         def _collect(node: TaskSchedule.TaskScheduleNode):
-            for name in node.task.parameters.keys():
+            for name in node.task._merged_parameters.keys():
                 val = node.task.bindings.get(name, None)
-                result[f"{node.task.name}/{name}"] = (node.task.parameters[name], val)
+                result[f"{node.task.name}/{name}"] = (
+                    node.task._merged_parameters[name], val
+                )
 
             for child in node.children.values():
                 _collect(child)

@@ -7,9 +7,26 @@
 import functools
 import os
 import subprocess
+import sys
 from contextlib import contextmanager
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+
+class ANSIColour(Enum):
+    BLACK = 30,
+    RED = 31,
+    GREEN = 32,
+    YELLOW = 33,
+    BLUE = 34,
+    MAGENTA = 35,
+    CYAN = 36,
+    WHITE = 37,
+
+
+def colour(text: str, colour: ANSIColour) -> str:
+    return f"\033[{colour.value[0]}m{text}\033[0m"
 
 
 @contextmanager
@@ -46,10 +63,10 @@ def run_cmd(
     log = not kwargs.get('capture_output', False)
     if skip:
         if log:
-            print(f"EXEC(skipped): '{cmdstr}'")
+            info(f"EXEC(skipped): '{cmdstr}'")
         return subprocess.CompletedProcess(cmd, 0)
     if log:
-        print(f"EXEC: '{cmdstr}'")
+        info(f"EXEC: '{cmdstr}'")
     if env is not None:
         tmp = os.environ.copy()
         tmp.update(env)
@@ -58,6 +75,14 @@ def run_cmd(
         kwargs['env'] = env
     result = subprocess.run(cmd, *args, **kwargs, check=True)
     if check_result and result.returncode != 0:
-        print(f"Command failed: {' '.join(result.stderr)}")
+        warn(f"Command failed: {' '.join(result.stderr)}")
         raise subprocess.CalledProcessError(result.returncode, cmd)
     return result
+
+
+def info(message: str):
+    print(colour("INFO", ANSIColour.GREEN) + f": {message}")
+
+
+def warn(message: str):
+    print(colour("WARN", ANSIColour.YELLOW) + f": {message}", file=sys.stderr)

@@ -7,21 +7,25 @@
 #
 
 import functools
+import json
 import re
 import shutil
 import sys
 import textwrap
+import time
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional, Type, Union
+from typing import Dict, List, Optional, Tuple, Type, Union
 
+# XXX-MJ this should be optional
+import boto3
 import pexpect
 
 from config import Config
 from git import GitRepository
 from mtree import MtreeFile
 from task import Task, TaskParameter, TaskMeta, TaskSchedule
-from util import chdir, host_machine, run_cmd
+from util import chdir, host_machine, info, run_cmd
 from vm import VMImage, VMHypervisor, BhyveRun, QEMURun
 
 
@@ -56,16 +60,15 @@ class FreeBSDSrcRepository(GitRepository):
 
 
 class GitCheckoutTask(Task):
-    name = 'git-checkout'
+    name = "git-checkout"
 
     parameters = {
         'url': TaskParameter(
-            description='URL of the Git repository to clone, or a filesystem path',
+            description="URL of the Git repository to clone, or a filesystem path",
             type=str,
-            required=True,
         ),
         'branch': TaskParameter(
-            description='Branch to check out',
+            description="Branch to check out",
             type=str,
         ),
     }
@@ -80,7 +83,7 @@ class GitCheckoutTask(Task):
 
 
 class FreeBSDSrcGitCheckoutTask(GitCheckoutTask):
-    name = 'freebsd-src-git-checkout'
+    name = "freebsd-src-git-checkout"
 
     url = 'anongit@git.freebsd.org:src.git'
     branch = 'main'
@@ -97,35 +100,35 @@ class FreeBSDSrcGitCheckoutTask(GitCheckoutTask):
 
 
 class FreeBSDSrcBuildTask(Task):
-    name = 'freebsd-src-build'
+    name = "freebsd-src-build"
 
     parameters = {
         'clean': TaskParameter(
-            description='Clean build directories before building',
+            description="Clean build directories before building",
             type=bool,
             default=False,
         ),
         'kernel_config': TaskParameter(
-            description='Kernel configuration to build',
+            description="Kernel configuration to build",
             type=str,
             default='GENERIC',
         ),
         'machine': TaskParameter(
-            description='Target machine architecture',
+            description="Target machine architecture",
             type=str,
             default=host_machine(),
         ),
         'make_targets': TaskParameter(
-            description='Make targets to build',
+            description="Make targets to build",
             type=str,  # XXX-MJ List[str]
             default=''
         ),
         'objdir': TaskParameter(
-            description='Object directory path for the build',
+            description="Object directory path for the build",
             type=Path,  # XXX-MJ default must be computed after some partial eval
         ),
         'toolchain': TaskParameter(
-            description='Toolchain to use for the build',
+            description="Toolchain to use for the build",
             type=str,
         ),
     }
@@ -219,7 +222,7 @@ class FreeBSDVMImageFilesystem(Enum):
 
 
 class FreeBSDVMImageTask(Task):
-    name = 'freebsd-vm-image'
+    name = "freebsd-vm-image"
 
     inputs = {
         'src': FreeBSDSrcGitCheckoutTask,
@@ -233,27 +236,27 @@ class FreeBSDVMImageTask(Task):
 
     parameters = {
         'filesystem': TaskParameter(
-            description='Filesystem type for the VM image',
+            description="Filesystem type for the VM image",
             type=FreeBSDVMImageFilesystem,
             default=FreeBSDVMImageFilesystem.UFS,
         ),
         'hostname': TaskParameter(
-            description='Hostname for the VM',
+            description="Hostname for the VM",
             type=str,
             default='freebsd',
         ),
         'image_size': TaskParameter(
-            description='Size of the VM image',
+            description="Size of the VM image",
             type=str,
             default='10g',
         ),
         'loader_tunables': TaskParameter(
-            description='Loader tunables for the VM',
+            description="Loader tunables for the VM",
             type=str,  # XXX-MJ Dict[str, str]
             default='',
         ),
         'swap_size': TaskParameter(
-            description='Size of the swap partition',
+            description="Size of the swap partition",
             type=str,
             default='2G',
         ),
@@ -411,7 +414,7 @@ class FreeBSDVMImageTask(Task):
 
 
 class FreeBSDVMBootTask(Task):
-    name = 'freebsd-vm-boot'
+    name = "freebsd-vm-boot"
 
     inputs = {
         'vm_image': FreeBSDVMImageTask,
@@ -419,27 +422,27 @@ class FreeBSDVMBootTask(Task):
 
     parameters = {
         'hypervisor': TaskParameter(
-            description='Hypervisor to use for running the VM',
+            description="Hypervisor to use for running the VM",
             type=VMHypervisor,
             default=VMHypervisor.QEMU,
         ),
         'interactive': TaskParameter(
-            description='Run the VM in interactive mode',
+            description="Run the VM in interactive mode",
             type=bool,
             default=True,
         ),
         'memory': TaskParameter(
-            description='Amount of memory to allocate to the VM',
+            description="Amount of memory to allocate to the VM",
             type=str,
             default="2048M",
         ),
         'ncpus': TaskParameter(
-            description='Number of CPUs to allocate to the VM',
+            description="Number of CPUs to allocate to the VM",
             type=int,
             default=2,
         ),
         'reboot': TaskParameter(
-            description='Restart the VM when it exits due to a reboot',
+            description="Restart the VM when it exits due to a reboot",
             type=bool,
             default=False,
         ),
@@ -467,6 +470,242 @@ class FreeBSDVMBootTask(Task):
         return {}
 
 
+class EC2Provider:
+    config: Config
+    ssh_key_dir: Path
+
+    def __init__(self, config: Config, region: str):
+        self.config = config
+        self.client = boto3.client('ec2', region)
+        self.resource = boto3.resource('ec2', region)
+        self.ssh_key_dir = self.config.workdir / "ec2-ssh-keys"
+
+    def create_ssh_keypair(self, key_name: str, tag_value: str) -> Path:
+        with chdir(self.ssh_key_dir):
+            keyfile = Path(f"{key_name}.pem").resolve()
+            if not keyfile.is_file():
+                key_pair = self.resource.create_key_pair(
+                    KeyName=key_name,
+                    TagSpecifications=[{
+                        'ResourceType': "key-pair",
+                        'Tags': [
+                            {'Key': "bricoler", 'Value': tag_value},
+                        ],
+                    }]
+                )
+                private_key = key_pair.key_material
+                with keyfile.open('w', encoding='utf-8') as f:
+                    f.write(private_key)
+                keyfile.chmod(0o400)
+            return keyfile
+
+    def create_instance(
+        self,
+        image_id: str,
+        instance_type: str,
+        key_name: str,
+        volume_size: int,
+        tag_value: str,
+    ):
+        ami = self.ami_by_id(image_id)
+        bdm = ami.get('BlockDeviceMappings')
+        bdm[0]['Ebs']['VolumeSize'] = volume_size
+
+        instances = self.resource.create_instances(
+            ImageId=image_id,
+            InstanceType=instance_type,
+            KeyName=key_name,
+            MinCount=1,
+            MaxCount=1,
+            BlockDeviceMappings=bdm,
+            TagSpecifications=[{
+                'ResourceType': "instance",
+                'Tags': [{'Key': "bricoler", 'Value': tag_value}],
+            }]
+        )
+        instance = instances[0]
+        instance.wait_until_running()
+        instance.reload()
+
+        timeout = 300
+        info(f"Waiting up to {timeout} seconds for instance {instance.id} to become ready")
+        start_time = time.time()
+        ec2_client = instance.meta.client
+        while time.time() - start_time < timeout:
+            response = ec2_client.describe_instance_status(
+                InstanceIds=[instance.id],
+                IncludeAllInstances=False
+            )
+
+            if response['InstanceStatuses']:
+                status = response['InstanceStatuses'][0]
+                instance_status = status['InstanceStatus']['Status']
+                system_status = status['SystemStatus']['Status']
+
+                if instance_status == "ok" and system_status == "ok":
+                    # XXX-MJ also need to wait for ssh
+                    return instance
+            time.sleep(5)
+        raise TimeoutError(f"Instance not ready after {timeout} seconds")
+
+    def clean(self, tag_value: str = "*"):
+        filters = [
+            {'Name': "tag:bricoler", 'Values': [tag_value]},
+        ]
+
+        shutil.rmtree(self.ssh_key_dir, ignore_errors=True)
+        for key_pair in self.resource.key_pairs.filter(Filters=filters):
+            key_pair.delete()
+
+        instances = self.resource.instances.filter(Filters=filters)
+        for instance in instances:
+            instance.terminate()
+        for instance in instances:
+            instance.wait_until_terminated()
+
+    @functools.cache
+    def ami_by_id(self, image_id: str) -> Dict[str, str]:
+        response = self.client.describe_images(ImageIds=[image_id])
+        images = response['Images']
+        if len(images) == 0:
+            raise ValueError(f"AMI {image_id} not found")
+        return images[0]
+
+    @functools.cache
+    def freebsd_amis(self, owners: Tuple[str] = ("aws-marketplace",)) -> List[Dict[str, str]]:
+        response = self.client.describe_images(
+            Filters=[
+                {'Name': "name", 'Values': ["FreeBSD*"]},
+                {'Name': "state", 'Values': ["available"]},
+            ],
+            Owners=list(owners),
+        )
+        images = response['Images']
+        images.sort(key=lambda x: x['CreationDate'], reverse=True)
+        return images
+
+    @functools.cache
+    def instance_types(self):
+        response = self.client.describe_instance_types()
+        instance_types = response['InstanceTypes']
+        instance_types.sort(key=lambda x: x['InstanceType'])
+        return instance_types
+
+
+class EC2MetaTask(Task):
+    parameters = {
+        'aws_region': TaskParameter(
+            description="AWS region to use",
+            type=str,
+            default="us-east-1",
+        ),
+    }
+
+
+class EC2LaunchTask(EC2MetaTask):
+    name = "ec2-launch-freebsd"
+
+    parameters = {
+        'image_id': TaskParameter(
+            description="AMI ID of the FreeBSD image to launch",
+            type=str,
+            required=True,
+        ),
+        'instance_type': TaskParameter(
+            description="EC2 instance type to launch",
+            type=str,
+            required=True,
+        ),
+        'volume_size': TaskParameter(
+            description="Size of the root volume (in GiB)",
+            type=int,
+            default=20,
+        ),
+    }
+
+    def run(self, ctx):
+        provider = EC2Provider(self.config, self.aws_region)
+        key_name = "bricoler-key"
+        keyfile = provider.create_ssh_keypair(
+            key_name=key_name,
+            tag_value=str(self.config.uuid),
+        )
+        instance = provider.create_instance(
+            image_id=self.image_id,
+            instance_type=self.instance_type,
+            key_name=key_name,
+            volume_size=self.volume_size,
+            tag_value=str(self.config.uuid),
+        )
+        info(f"Instance launched: {instance.id}")
+        info(f"SSH command: ssh -i {keyfile} ec2-user@{instance.public_dns_name}")
+        return {}
+
+
+class EC2CleanTask(EC2MetaTask):
+    name = "ec2-clean"
+    description = "Clean up EC2 resources created by bricoler"
+
+    parameters = {
+        'all': TaskParameter(
+            description="Clean up all EC2 resources created by bricoler across all workdirs",
+            type=bool,
+            default=False,
+        ),
+    }
+
+    def run(self, ctx):
+        provider = EC2Provider(self.config, self.aws_region)
+        provider.clean(str(self.config.uuid) if not self.all else "*")
+        return {}
+
+
+class EC2ListAMIsTask(EC2MetaTask):
+    name = "ec2-list-freebsd-amis"
+
+    parameters = {
+        'owners': TaskParameter(
+            description="Space-separated list of AMI owners to filter by",
+            type=str,
+            default="782442783595",  # FreeBSD community AMIs
+        ),
+    }
+
+    def run(self, ctx):
+        provider = EC2Provider(self.config, self.aws_region)
+        amis = provider.freebsd_amis(tuple(self.owners.split()))
+        json.dump(amis, sys.stdout, indent=2)
+        return {}
+
+
+class EC2ListInstanceTypesTask(EC2MetaTask):
+    name = "ec2-list-instance-types"
+
+    parameters = {
+        'min_ncpu': TaskParameter(
+            description="Filter instance types by minimum number of CPUs",
+            type=int,
+            default=1,
+        ),
+        'min_memory': TaskParameter(
+            description="Filter instance types by minimum memory (in MiB)",
+            type=int,
+            default=256,
+        ),
+    }
+
+    def run(self, ctx):
+        provider = EC2Provider(self.config, self.aws_region)
+        instance_types = provider.instance_types()
+        for it in instance_types:
+            if it['VCpuInfo']['DefaultVCpus'] < self.min_ncpu:
+                continue
+            if it['MemoryInfo']['SizeInMiB'] < self.min_memory:
+                continue
+            json.dump(it, sys.stdout, indent=2)
+        return {}
+
+
 #
 # Features to add:
 # - automatic bisection for build and test failures
@@ -474,6 +713,8 @@ class FreeBSDVMBootTask(Task):
 #   - or, e.g., when syzkaller finds a new report
 # - ability to skip dependent tasks
 # - tasks to cross-build package repos
+# - tasks to boot FreeBSD in different clouds
+# - tasks for performance regression testing
 #
 def main() -> int:
     config = Config()
@@ -519,7 +760,7 @@ def main() -> int:
         return 0
     elif args.list:
         for task in sched.tasks.values():
-            for name in task.parameters.keys():
+            for name in task.get_parameter_keys():
                 print(f"{task.name}/{name}")
         return 0
     else:

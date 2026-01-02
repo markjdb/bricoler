@@ -8,7 +8,7 @@ import os
 from abc import abstractmethod
 from enum import Enum
 from pathlib import Path
-from typing import Any, List
+from typing import Any, List, Optional
 
 from util import run_cmd
 
@@ -150,7 +150,7 @@ class QEMURun(VMRun):
                 f"Unsupported block driver {driver} is not supported by QEMU"
             )
 
-    def machine_type(self) -> str:
+    def machine_type(self) -> Optional[str]:
         machines = {
             'arm64': 'virt,gic-version=3',
         }

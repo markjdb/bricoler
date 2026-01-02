@@ -5,7 +5,7 @@
 #
 
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 from urllib.parse import urlparse
 
 from util import run_cmd
@@ -34,8 +34,9 @@ class GitRepository:
         self._no_cmds = no_cmds
 
         parsed = urlparse(url)
-        if parsed.scheme == '' and not self.is_ssh_url(url):
-            self.url = self.path = Path(url).resolve()
+        self.external = parsed.scheme == '' and not self.is_ssh_url(url)
+        if self.external:
+            self.path = Path(url).resolve()
         else:
             self.path = path.resolve()
         self.clone()
@@ -46,7 +47,7 @@ class GitRepository:
         return run_cmd(['git', '-C', self.path] + cmd, *args, **kwargs)
 
     def clone(self):
-        if self.path == self.url:
+        if self.external:
             # This repository is externally managed.
             if not (self.path / ".git").is_dir():
                 raise ValueError(
@@ -62,7 +63,7 @@ class GitRepository:
 
     def update(self):
         assert self.path is not None
-        if self.path == self.url:
+        if self.external:
             # This repository is externally managed.
             return
         if self._no_cmds:
