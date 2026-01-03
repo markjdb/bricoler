@@ -25,11 +25,12 @@ from config import Config
 from git import GitRepository
 from mtree import MtreeFile
 from task import Task, TaskParameter, TaskMeta, TaskSchedule
-from util import chdir, host_machine, info, run_cmd
+from util import chdir, host_machine, info, run_cmd, warn
 from vm import VMImage, VMHypervisor, BhyveRun, QEMURun
 
 
 class FreeBSDSrcRepository(GitRepository):
+    @functools.cache
     def get___FreeBSD_version(self) -> int:
         file = self.path / 'sys' / 'sys' / 'param.h'
         with file.open('r') as f:
@@ -65,11 +66,10 @@ class GitCheckoutTask(Task):
     parameters = {
         'url': TaskParameter(
             description="URL of the Git repository to clone, or a filesystem path",
-            type=str,
+            required=True,
         ),
         'branch': TaskParameter(
             description="Branch to check out",
-            type=str,
         ),
     }
     outputs = {
@@ -90,12 +90,12 @@ class FreeBSDSrcGitCheckoutTask(GitCheckoutTask):
 
     outputs = {
         'repo': FreeBSDSrcRepository,
-        '__FreeBSD_version': int,
+        'FreeBSD_version': int,
     }
 
     def run(self, ctx):
         outputs = super().run(ctx, repotype=FreeBSDSrcRepository)
-        outputs['__FreeBSD_version'] = outputs['repo'].get___FreeBSD_version()
+        outputs['FreeBSD_version'] = outputs['repo'].get___FreeBSD_version()
         return outputs
 
 
@@ -110,12 +110,10 @@ class FreeBSDSrcBuildTask(Task):
         ),
         'kernel_config': TaskParameter(
             description="Kernel configuration to build",
-            type=str,
-            default='GENERIC',
+            default="GENERIC",
         ),
         'machine': TaskParameter(
             description="Target machine architecture",
-            type=str,
             default=host_machine(),
         ),
         'make_targets': TaskParameter(
@@ -129,7 +127,6 @@ class FreeBSDSrcBuildTask(Task):
         ),
         'toolchain': TaskParameter(
             description="Toolchain to use for the build",
-            type=str,
         ),
     }
 
@@ -175,8 +172,9 @@ class FreeBSDSrcBuildTask(Task):
         mtree = MtreeFile()
         for target in self.make_targets.split():
             metalog = stagedir / f"METALOG.{target}.mtree"
-            with open(metalog, 'w') as f:
-                f.truncate(0)
+            if not self.skip:
+                with open(metalog, 'w') as f:
+                    f.truncate(0)
 
             args = [
                 target,
@@ -216,6 +214,10 @@ class FreeBSDSrcBuildAndInstallTask(FreeBSDSrcBuildTask):
     make_targets = "buildworld buildkernel installworld installkernel distribution"
 
 
+class FreeBSDPkgBaseBuildTask(FreeBSDSrcBuildTask):
+    make_targets = "buildworld buildkernel packages"
+
+
 class FreeBSDVMImageFilesystem(Enum):
     UFS = 'ufs'
     ZFS = 'zfs'
@@ -237,28 +239,38 @@ class FreeBSDVMImageTask(Task):
     parameters = {
         'filesystem': TaskParameter(
             description="Filesystem type for the VM image",
-            type=FreeBSDVMImageFilesystem,
+            type=FreeBSDVMImageFilesystem,  # XXX-MJ validate enum
             default=FreeBSDVMImageFilesystem.UFS,
         ),
         'hostname': TaskParameter(
             description="Hostname for the VM",
-            type=str,
             default='freebsd',
         ),
         'image_size': TaskParameter(
-            description="Size of the VM image",
-            type=str,
-            default='10g',
+            description="Size of the filesystem image in GiB",
+            type=int,
+            default=10,
         ),
         'loader_tunables': TaskParameter(
             description="Loader tunables for the VM",
             type=str,  # XXX-MJ Dict[str, str]
             default='',
         ),
+        'overlay': TaskParameter(
+            description="Path to an overlay directory to copy into the image",
+            type=Path,
+        ),
+        'packages': TaskParameter(
+            description="A list of packages to install into the image",
+        ),
+        'package_repo_file': TaskParameter(
+            description="Path to a pkg(8) repository configuration file used to fetch packages",
+            type=Path,
+            # XXX-MJ should be a default
+        ),
         'swap_size': TaskParameter(
             description="Size of the swap partition",
-            type=str,
-            default='2G',
+            default="2G",
         ),
     }
 
@@ -266,17 +278,30 @@ class FreeBSDVMImageTask(Task):
         machine = self.build.machine
         metalog: MtreeFile = self.build.metalog
         stagedir = self.build.stagedir
+        zfs_pool_name = "zroot"
 
         outputs = {}
 
         # Create ssh keys for the VM.
         outputs['ssh_key_directory'] = Path("./ssh-keys").resolve()
         with chdir(outputs['ssh_key_directory']):
-            keyfile = Path("id_ed25519_root").resolve()
+            keyfile = Path.cwd() / "id_ed25519_root"
             if not keyfile.is_file():
                 self.run_cmd(["ssh-keygen", "-t", "ed25519", "-f", str(keyfile), "-N", ""])
             metalog.add_file(keyfile.with_suffix('.pub'),
                              Path("root/.ssh/authorized_keys"))
+
+        def add_overlay(root: Path) -> None:
+            if not root.is_dir():
+                raise ValueError(f"Overlay path '{root}' is not a directory")
+            for item in root.rglob('*'):
+                rel = item.relative_to(root)
+                if item.is_dir():
+                    metalog.add_dir(rel)
+                elif item.is_file():
+                    metalog.add_file(item, rel)
+                else:
+                    warn(f"Skipping unsupported overlay item: {item}")
 
         def add_config_file(
             _path: Union[Path, str],
@@ -299,6 +324,9 @@ class FreeBSDVMImageTask(Task):
                 f.write(str.join("\n", contents) + "\n")
             metalog.add_file(path.resolve(), path)
 
+        if self.overlay is not None:
+            add_overlay(self.overlay)
+
         add_config_file("etc/ssh/sshd_config",
                         "PermitRootLogin without-password",
                         source=(stagedir / "etc/ssh/sshd_config"))
@@ -310,22 +338,103 @@ class FreeBSDVMImageTask(Task):
                         "defaultroute_delay=2",
                         "sshd_enable=YES",
                         "sshd_rsa_enable=NO",
-                        """
+                        f"""
                         zfs_enable=YES
-                        zpool_reguid=zroot
-                        zpool_upgrade=zroot
+                        zpool_reguid={zfs_pool_name}
+                        zpool_upgrade={zfs_pool_name}
                         """ if self.filesystem == FreeBSDVMImageFilesystem.ZFS else "")
+
         add_config_file("etc/fstab",
                         """
                         /dev/gpt/rootfs / ufs rw 1 1
                         """ if self.filesystem == FreeBSDVMImageFilesystem.UFS else "",
                         "none /dev/fd fdescfs rw 0 0")
+
         add_config_file("boot/loader.conf",
                         "autoboot_delay=1",
                         "console=comconsole",
                         "kern.geom.label.disk_ident.enable=0",
                         "zfs_load=YES" if self.filesystem == FreeBSDVMImageFilesystem.ZFS else "",
                         *[tunable for tunable in self.loader_tunables.split()])
+
+        add_config_file("firstboot")
+
+        if self.packages is not None:
+            major = self.src.FreeBSD_version // 100000
+            pkgabi = f"FreeBSD:{major}:{machine.split('/')[0]}"
+
+            pkg_root = Path.cwd() / "pkg" / pkgabi
+            cache_dir = pkg_root / "cache"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            db_dir = pkg_root / "db"
+            db_dir.mkdir(parents=True, exist_ok=True)
+            repos_dir = pkg_root / "repo"
+            repos_dir.mkdir(parents=True, exist_ok=True)
+
+            # Set up a pkg repository configuration.
+            source = self.package_repo_file
+            if source is None:
+                source = self.config.files_dir / "pkg.conf"
+            shutil.copyfile(source, repos_dir / "pkg.conf")
+
+            def pkg_cmd(*args, **kwargs):
+                cmd = [
+                    "pkg",
+                    "-o", "ASSUME_ALWAYS_YES=true",
+                    "-o", "INSTALL_AS_USER=yes",
+                    "-o", f"ABI={pkgabi}",
+                    "-o", f"PKG_CACHEDIR={cache_dir}",
+                    "-o", f"PKG_DBDIR={db_dir}",
+                    "-o", f"OSVERSION={self.src.FreeBSD_version}",
+                    "-o", f"REPOS_DIR={repos_dir}",
+                ]
+                cmd += list(args)
+                return self.run_cmd(cmd, **kwargs)
+
+            stage_dir = pkg_root / "stage"
+            pkg_reldir = "root/pkg"
+            pkg_dir = stage_dir / pkg_reldir
+            pkg_dir.mkdir(parents=True, exist_ok=True)
+            pkg_cmd("update", "-r", "bricoler")
+            pkg_cmd("fetch", "--dependencies", "-o", pkg_dir, "pkg")
+            for pkg in self.packages.split():
+                pkg_cmd("fetch", "--dependencies", "-o", pkg_dir, pkg)
+            pkg_cmd("repo", pkg_dir)
+
+            pkg_version = pkg_cmd("rquery", "%v", "pkg", capture_output=True).stdout
+            pkg_version = pkg_version.decode().strip()
+
+            add_overlay(stage_dir)
+
+            add_config_file("etc/pkg/local.conf",
+                            f"""
+                            local: {{
+                                url: "file:///{pkg_reldir}",
+                                signature_type: "none",
+                            }}
+                            """)
+
+            add_config_file("etc/rc.local",
+                            f"""
+                            bricoler_add_pkgs()
+                            {{
+                                export PATH=${{PATH}}:/usr/local/sbin:/usr/local/bin
+                                echo ""
+                                echo "bricoler: Running first-boot setup"
+                                # Older version of pkg(7) don't use basename().
+                                cd /{pkg_reldir}/All/Hashed
+                                # Install pkg(8).
+                                IGNORE_OSVERSION=yes pkg add -r local pkg-{pkg_version}*
+                                # Install the requested packages.
+                                for pkg in {self.packages}; do
+                                    IGNORE_OSVERSION=yes pkg install -y -r local ${{pkg}}
+                                done
+                            }}
+
+                            if [ -f /firstboot ]; then
+                                bricoler_add_pkgs
+                            fi
+                            """)
 
         metalog_path = Path.cwd() / "METALOG.mtree"
         metalog.write(metalog_path)
@@ -337,12 +446,21 @@ class FreeBSDVMImageTask(Task):
 
         makefs_cmd = ["makefs"]
         if self.filesystem == FreeBSDVMImageFilesystem.UFS:
-            makefs_cmd += ["-t", "ffs", "-Z", "-o", "softupdates=1", "-o" "version=2"]
+            makefs_cmd += [
+                "-t", "ffs",
+                "-Z",
+                "-o", "softupdates=1",
+                "-o" "version=2"
+            ]
         else:
-            makefs_cmd += ["-t", "zfs", "-o", "poolname=zroot", "-o", "bootfs=zroot"]
+            makefs_cmd += [
+                "-t", "zfs",
+                "-o", f"poolname={zfs_pool_name}",
+                "-o", f"bootfs={zfs_pool_name}"
+            ]
         makefs_cmd += [
             "-DD",
-            "-s", self.image_size,
+            "-s", f"{self.image_size}g",
             fs_image_path,
             metalog_path,
         ]
@@ -432,9 +550,9 @@ class FreeBSDVMBootTask(Task):
             default=True,
         ),
         'memory': TaskParameter(
-            description="Amount of memory to allocate to the VM",
-            type=str,
-            default="2048M",
+            description="Amount of memory to allocate to the VM in MiB",
+            default=2048,
+            type=int,
         ),
         'ncpus': TaskParameter(
             description="Number of CPUs to allocate to the VM",
@@ -594,9 +712,9 @@ class EC2Provider:
 
 class EC2MetaTask(Task):
     parameters = {
+        # XXX-MJ need a mechanism to set a default value for this from config
         'aws_region': TaskParameter(
             description="AWS region to use",
-            type=str,
             default="us-east-1",
         ),
     }
@@ -608,16 +726,14 @@ class EC2LaunchTask(EC2MetaTask):
     parameters = {
         'image_id': TaskParameter(
             description="AMI ID of the FreeBSD image to launch",
-            type=str,
             required=True,
         ),
         'instance_type': TaskParameter(
             description="EC2 instance type to launch",
-            type=str,
             required=True,
         ),
         'volume_size': TaskParameter(
-            description="Size of the root volume (in GiB)",
+            description="Size of the root volume in GiB",
             type=int,
             default=20,
         ),
@@ -666,7 +782,6 @@ class EC2ListAMIsTask(EC2MetaTask):
     parameters = {
         'owners': TaskParameter(
             description="Space-separated list of AMI owners to filter by",
-            type=str,
             default="782442783595",  # FreeBSD community AMIs
         ),
     }
@@ -715,6 +830,8 @@ class EC2ListInstanceTypesTask(EC2MetaTask):
 # - tasks to cross-build package repos
 # - tasks to boot FreeBSD in different clouds
 # - tasks for performance regression testing
+# - integration with project infrastructure, e.g., bugzilla, phabricator
+#   - src builds could have an option to apply patches from phab first, for instance
 #
 def main() -> int:
     config = Config()
@@ -760,7 +877,7 @@ def main() -> int:
         return 0
     elif args.list:
         for task in sched.tasks.values():
-            for name in task.get_parameter_keys():
+            for name in task.__class__.get_parameter_keys():
                 print(f"{task.name}/{name}")
         return 0
     else:

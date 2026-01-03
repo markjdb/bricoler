@@ -7,6 +7,7 @@
 import argparse
 import json
 import os
+import sys
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -17,17 +18,18 @@ class Config:
     config_file_object: Dict[str, Any] = {}
     CONFIG_FILE_VERSION = 1
     config_path: Path
+    files_dir: Path
     max_jobs: int = len(os.sched_getaffinity(0))
     parser: argparse.ArgumentParser
-    skip: bool
+    skip: bool = False
     task_params: Dict[str, Dict[str, Any]] = {}
     workdir: Path
     uuid: uuid.UUID
 
     def __init__(self):
+        self.files_dir = Path(sys.argv[0]).parent.resolve() / 'files'
         self.workdir = Path(os.environ.get('BRICOLER_WORKDIR',
                                            Path.home() / 'bricoler')).resolve()
-        self.config_path = Path(self.workdir / 'bricoler.json')
 
         parser = argparse.ArgumentParser(prog='bricoler')
         parser.add_argument(
@@ -92,6 +94,7 @@ class Config:
 
         self.skip = opts.skip
         self.workdir.mkdir(parents=True, exist_ok=True)
+        self.config_path = Path(self.workdir / 'bricoler.json')
 
         # Load aliases from the configuration file.
         try:

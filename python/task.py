@@ -262,6 +262,7 @@ class Task(ABC, metaclass=TaskMeta):
     def get_parameter(self, name: str) -> TaskParameter:
         return self._merged_parameters[name]
 
+    @classmethod
     def get_parameter_keys(self) -> List[str]:
         return list(self._merged_parameters.keys())
 
@@ -292,7 +293,9 @@ class Task(ABC, metaclass=TaskMeta):
             return outputs
 
     def run_cmd(self, cmd: List[Any], *args, **kwargs) -> subprocess.CompletedProcess:
-        return run_cmd(cmd, *args, skip=self.skip, **kwargs)
+        # Ignore self.skip if the caller needs command output.
+        skip = self.skip and not kwargs.get('capture_output', False)
+        return run_cmd(cmd, *args, skip=skip, **kwargs)
 
     @abstractmethod
     def run(self, ctx) -> Dict[str, Any]: ...

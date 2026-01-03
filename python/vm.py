@@ -37,7 +37,7 @@ class VMRun:
     def __init__(
         self,
         image: VMImage,
-        memory: str = '2G',
+        memory: int = 2048,
         ncpus: int = 2,
         block_driver: BlockDriver = BlockDriver.VIRTIO,
         nic_driver: NetworkDriver = NetworkDriver.VIRTIO,
@@ -95,7 +95,7 @@ class BhyveRun(VMRun):
         destroy_cmd = ["bhyvectl", "--vm=bricoler", "--destroy"]
         run_cmd(destroy_cmd, check_result=False)
 
-        bhyve_cmd = ["bhyve", "-c", self.ncpus, "-m", self.memory]
+        bhyve_cmd = ["bhyve", "-c", self.ncpus, "-m", f"{self.memory}M"]
         devindex = 0
 
         def add_device(desc):
@@ -168,7 +168,7 @@ class QEMURun(VMRun):
             "-nographic",
             "-no-reboot",
             "-cpu", "max",
-            "-m", self.memory,
+            "-m", f"{self.memory}M",
             "-smp", self.ncpus,
             "-bios", self.bios_path(),
             "-device", "virtio-rng-pci",
