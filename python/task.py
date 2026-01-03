@@ -14,8 +14,10 @@
 # invokable or otherwise visible in the UI, but can be used to factor out common
 # functionality and parameters.
 #
-# Tasks can inherit from other tasks.
-# XXX-MJ need some magic to compose parameters
+# Tasks can inherit from other tasks.  They can override parameter values by defining
+# the parameter as a class attribute.  In general class inheritance works as normal,
+# but the "inputs" and "parameters" dictionaries are merged from parent classes, providing
+# way to extend and customize tasks.
 #
 
 import inspect
@@ -59,8 +61,8 @@ class TaskMeta(ABCMeta):
                 f"Task '{cls.name}' should not define any bindings"
             )
 
-        # Any members must be a parameter type.
-        parameters = getattr(cls, 'parameters', {})
+        # Any members must be a parameter value.
+        parameters = getattr(cls, 'parameters')
         for name in namespace.keys():
             if name.startswith('_'):
                 continue
@@ -82,7 +84,7 @@ class TaskMeta(ABCMeta):
         # Do some validation of the task definition.
         #
         # Ensure that the input parameter names are disjoint.
-        overlap = inputs.keys() & parameters.keys()
+        overlap = cls._merged_inputs.keys() & cls._merged_parameters.keys()
         if len(overlap) > 0:
             raise ValueError(
                 f"Task '{name}' has overlapping names: {', '.join(overlap)}"
@@ -114,7 +116,7 @@ class TaskMeta(ABCMeta):
     def _validate_anonymous_task(mcs, cls: Type['Task'], namespace) -> None:
         mcs._validate_common(cls, namespace)
 
-        invalid_keys = mcs._reserved_names & set(namespace.keys())
+        invalid_keys = mcs._reserved_names & (set(namespace.keys()) - {"run", "inputs"})
         if len(invalid_keys) > 0:
             raise ValueError(
                 f"Anonymous task '{cls.__name__}' cannot define: {', '.join(invalid_keys)}"
@@ -127,6 +129,10 @@ class TaskMeta(ABCMeta):
             b._merged_parameters for b in bases if hasattr(b, '_merged_parameters')
         ]
         cls._merged_parameters = ChainMap(cls.parameters, *parent_parameters)
+        parent_inputs = [
+            b._merged_inputs for b in bases if hasattr(b, '_merged_inputs')
+        ]
+        cls._merged_inputs = ChainMap(cls.inputs, *parent_inputs)
 
         if not inspect.isabstract(cls):
             task_name = namespace.get('name')
@@ -233,6 +239,7 @@ class Task(ABC, metaclass=TaskMeta):
     inputs: Dict[str, Type['Task']] = {}
     outputs: Dict[str, Any] = {}
     parameters: Dict[str, TaskParameter] = {}
+    _merged_inputs: ChainMap[str, Type['Task']]
     _merged_parameters: ChainMap[str, TaskParameter]
     skip: bool = False
 
@@ -245,9 +252,9 @@ class Task(ABC, metaclass=TaskMeta):
         for name, param in self._merged_parameters.items():
             self.bind({name: param.default},
                       TaskParameterBinding.BindingType.DEFAULT)
-        for name, val in self.__class__.__dict__.items():
+        for name in dir(self.__class__):
             if name in self._merged_parameters:
-                self.bind({name: val},
+                self.bind({name: getattr(self, name)},
                           TaskParameterBinding.BindingType.OVERRIDDEN)
 
     def bind(self, params: Dict[str, Any], source: TaskParameterBinding.BindingType) -> None:
@@ -309,7 +316,7 @@ class TaskSchedule:
         def __init__(self, task: Type[Task], config: Config):
             self.task = task(config)
             self.children = {}
-            for name, input in task.inputs.items():
+            for name, input in task._merged_inputs.items():
                 self.children[name] = TaskSchedule.TaskScheduleNode(input, config)
 
         def _run(self, ctx: SimpleNamespace) -> Dict[str, Any]:

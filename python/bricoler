@@ -116,6 +116,10 @@ class FreeBSDSrcBuildTask(Task):
             description="Target machine architecture",
             default=host_machine(),
         ),
+        'make_options': TaskParameter(
+            description="Additional make(1) options to pass to the build",
+            type=str,  # XXX-MJ List[str]
+        ),
         'make_targets': TaskParameter(
             description="Make targets to build",
             type=str,  # XXX-MJ List[str]
@@ -192,6 +196,8 @@ class FreeBSDSrcBuildTask(Task):
                 args.append("WITHOUT_CLEAN=")
             if self.toolchain is not None:
                 args.append(f"CROSS_TOOLCHAIN={self.toolchain}")
+            if self.make_options is not None:
+                args += self.make_options.split()
 
             env = {
                 "MAKEOBJDIRPREFIX": objdir,
@@ -271,6 +277,10 @@ class FreeBSDVMImageTask(Task):
         'swap_size': TaskParameter(
             description="Size of the swap partition",
             default="2G",
+        ),
+        'sysctls': TaskParameter(
+            description="A list of sysctl(8) settings to apply to the image",
+            type=str,  # XXX-MJ Dict[str, str]
         ),
     }
 
@@ -356,6 +366,11 @@ class FreeBSDVMImageTask(Task):
                         "kern.geom.label.disk_ident.enable=0",
                         "zfs_load=YES" if self.filesystem == FreeBSDVMImageFilesystem.ZFS else "",
                         *[tunable for tunable in self.loader_tunables.split()])
+
+        if self.sysctls is not None:
+            add_config_file("etc/sysctl.conf",
+                            *[sysctl for sysctl in self.sysctls.split()],
+                            source=(stagedir / "etc/sysctl.conf"))
 
         add_config_file("firstboot")
 
@@ -586,6 +601,70 @@ class FreeBSDVMBootTask(Task):
             child.expect("root@.*#")
 
         return {}
+
+
+class FreeBSDRegressionTestSuiteBuildTask(FreeBSDSrcBuildAndInstallTask):
+    make_options = " ".join([
+        # Remove some optional components to speed up the build.
+        "WITHOUT_CLANG=", "WITHOUT_LLD=", "WITHOUT_LLDB=", "WITHOUT_LIB32=",
+        # The in-tree ZFS tests take a long time to run and aren't very useful
+        # outside of ZFS development.
+        "WITHOUT_ZFS_TESTS=",
+    ])
+
+    def run(self, ctx):
+        outputs = super().run(ctx)
+
+        # Manually install the run-kyua helper script.
+        dest = outputs['stagedir'] / "usr/tests/run-kyua"
+        shutil.copyfile(self.config.files_dir / "run-kyua", dest)
+        outputs['metalog'].add_file(dest, Path("usr/tests/run-kyua"), mode=0o755)
+        return outputs
+
+
+class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
+    loader_tunables = " ".join([
+        "net.inet.ip.fw.default_to_accept=1",
+        "net.inet.ipf.jail_allowed=1",
+        "net.fibs=8",
+    ])
+
+    packages = " ".join([
+        "coreutils",
+        "gdb",
+        "git-lite",
+        "gtar",
+        "perl5",
+        "jq",
+        "ksh93",
+        "llvm",
+        "nmap"
+    ])
+
+    sysctls = " ".join([
+        "kern.ipc.tls.enable=1",
+        "vfs.aio.enable_unsafe=1",
+        "kern.crypto.allow_soft=1",
+        "vm.panic_on_oom=1",
+        "security.mac.bsdextended.enabled=0",
+        "security.mac.ipacl.ipv4=0",
+        "security.mac.ipacl.ipv6=0",
+        "security.mac.portacl.enabled=0",
+    ])
+
+    inputs = {
+        'build': FreeBSDRegressionTestSuiteBuildTask,
+    }
+
+
+class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
+    name = "freebsd-regression-test-suite"
+
+    interactive = False
+
+    inputs = {
+        'vm_image': FreeBSDRegressionTestSuiteVMImageTask,
+    }
 
 
 class EC2Provider:
@@ -870,10 +949,11 @@ def main() -> int:
             print(sched.target.description)
         else:
             print("")
-        width = max(len(name) for name in sched.parameters.keys()) + 2
-        for name, param in sched.parameters.items():
-            print(f"{name+':':<{width}} {param[0].description}")
-            print(f"{'':{width+1}}{str(param[1])}")
+        if len(sched.target.parameters) > 0:
+            width = max(len(name) for name in sched.parameters.keys()) + 2
+            for name, param in sched.parameters.items():
+                print(f"{name+':':<{width}} {param[0].description}")
+                print(f"{'':{width+1}}{str(param[1])}")
         return 0
     elif args.list:
         for task in sched.tasks.values():
