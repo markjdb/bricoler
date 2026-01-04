@@ -6,12 +6,13 @@
 
 import functools
 import os
+import socket
 import subprocess
 import sys
 from contextlib import contextmanager
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class ANSIColour(Enum):
@@ -86,3 +87,9 @@ def info(message: str):
 
 def warn(message: str):
     print(colour("WARN", ANSIColour.YELLOW) + f": {message}", file=sys.stderr)
+
+
+def unused_tcp_addr() -> Tuple[str, int]:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('127.0.0.1', 0))
+        return s.getsockname()

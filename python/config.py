@@ -5,6 +5,7 @@
 #
 
 import argparse
+import fcntl
 import json
 import os
 import sys
@@ -179,6 +180,17 @@ class Config:
             self.command_line_parameters.append(arg)
 
         return opts
+
+    def lock(self):
+        # Lock the configuration file to prevent concurrent modifications.
+        try:
+            self._locked_file = self.config_path.open('r+')
+            fcntl.flock(self._locked_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as e:
+            raise RuntimeError(
+                f"Could not acquire lock on configuration file '{self.config_path}': "
+                "another instance of bricoler may be running"
+            ) from e
 
     def usage(self) -> None:
         # XXX-MJ usage is not very good

@@ -5,12 +5,16 @@
 #
 
 import os
+import re
+import sys
 from abc import abstractmethod
 from enum import Enum
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Tuple
 
-from util import run_cmd
+from util import run_cmd, unused_tcp_addr
+
+import pexpect
 
 
 class VMImage:
@@ -47,12 +51,14 @@ class VMRun:
         self.ncpus = ncpus
         self.block_driver = block_driver
         self.nic_driver = nic_driver
+        self.gdb_addr = unused_tcp_addr()
+        self.ssh_addr = unused_tcp_addr()
 
     @abstractmethod
     def setup(self) -> List[Any]: ...
 
-    def boot(self, interactive) -> None:
-        pass
+    @abstractmethod
+    def ssh_addr(self) -> Tuple[str, int]: ...
 
 
 class BhyveRun(VMRun):
@@ -150,6 +156,15 @@ class QEMURun(VMRun):
                 f"Unsupported block driver {driver} is not supported by QEMU"
             )
 
+    def nic_driver_name(self) -> str:
+        driver = self.nic_driver
+        if driver == VMRun.NetworkDriver.VIRTIO:
+            return "virtio-net-pci"
+        else:
+            raise ValueError(
+                f"Unsupported network driver {driver} is not supported by QEMU"
+            )
+
     def machine_type(self) -> Optional[str]:
         machines = {
             'arm64': 'virt,gic-version=3',
@@ -174,9 +189,83 @@ class QEMURun(VMRun):
             "-device", "virtio-rng-pci",
             "-device", f"{self.block_driver_name()},drive=image",
             "-drive", f"file={self.image.path},if=none,id=image,format=raw",
+            "-device", f"{self.nic_driver_name()},netdev=net0",
+            "-netdev", f"user,id=net0,hostfwd=tcp:{self.ssh_addr[0]}:{self.ssh_addr[1]}-:22",
+            "-gdb", f"tcp:{self.gdb_addr[0]}:{self.gdb_addr[1]}",
         ]
         machine_type = self.machine_type()
         if machine_type is not None:
             qemu_cmd.extend(["-M", machine_type])
 
         return [str(a) for a in qemu_cmd]
+
+
+class FreeBSDVM:
+    class PanicException(RuntimeError):
+        def __init__(
+            self,
+            panicstr: str,
+            cpuid: int,
+            backtrace: str,
+            message: Optional[str] = "VM panicked",
+        ):
+            self.panicstr = panicstr
+            self.cpuid = cpuid
+            self.backtrace = backtrace
+            super().__init__("{message}: {panicstr}")
+
+    def __init__(self, cmd: List[Any], logfile=sys.stdout.buffer):
+        self.cmd = cmd
+        self.logfile = logfile
+
+    def expect(self, prompt: str, **kwargs) -> int:
+        patterns = [
+            prompt,
+            r"panic:\s+(?P<panic>.+)\s*\r?\n",
+            # We should collect witness warnings and other non-fatal errors here too.
+        ]
+        pattern = self.proc.expect(patterns, **kwargs)
+        if pattern == 1:
+            # Collect the panic string, CPU ID and backtrace.
+            panicstr = self.proc.match.group("panic").strip().decode()
+            self.proc.expect(r"cpuid\s*=\s*(?P<cpuid>\d+)\s*\r?\n")
+            cpuid = int(self.proc.match.group('cpuid'))
+            self.proc.expect(r"KDB:\s+stack backtrace:\s*\r?\n")
+            backtrace_lines = []
+            while True:
+                idx = self.proc.expect([
+                    r"KDB:\s+enter:\s+panic\s\r?\n",
+                    r"(.*)\s*\r?\n",
+                ])
+
+                if idx == 0:
+                    break
+                else:
+                    line = self.proc.match.group(1).decode()
+                    backtrace_lines.append(line)
+
+            # We could potentially symbolize the backtrace using addr2line,
+            # or attach a debugger and get full output.
+            backtrace = "\n".join(backtrace_lines)
+            raise self.PanicException(panicstr, cpuid, backtrace)
+        return pattern
+
+    def sendline(self, line: str):
+        self.proc.sendline(line)
+
+    def boot_to_login(self):
+        self.proc = pexpect.spawn(
+            self.cmd[0],
+            self.cmd[1:],
+            logfile=self.logfile,
+        )
+        try:
+            self.expect("login:", timeout=300)
+            self.sendline("root")
+            self.wait_for_prompt()
+        except self.PanicException as e:
+            e.args = (f"VM panicked during boot: {e.panicstr}",)
+            raise e
+
+    def wait_for_prompt(self, **kwargs):
+        self.expect("root@.*#", **kwargs)

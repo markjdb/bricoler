@@ -8,6 +8,7 @@
 
 import functools
 import json
+import os
 import re
 import shutil
 import sys
@@ -26,7 +27,7 @@ from git import GitRepository
 from mtree import MtreeFile
 from task import Task, TaskParameter, TaskMeta, TaskSchedule
 from util import chdir, host_machine, info, run_cmd, warn
-from vm import VMImage, VMHypervisor, BhyveRun, QEMURun
+from vm import FreeBSDVM, VMImage, VMHypervisor, BhyveRun, QEMURun
 
 
 class FreeBSDSrcRepository(GitRepository):
@@ -411,9 +412,7 @@ class FreeBSDVMImageTask(Task):
             pkg_dir = stage_dir / pkg_reldir
             pkg_dir.mkdir(parents=True, exist_ok=True)
             pkg_cmd("update", "-r", "bricoler")
-            pkg_cmd("fetch", "--dependencies", "-o", pkg_dir, "pkg")
-            for pkg in self.packages.split():
-                pkg_cmd("fetch", "--dependencies", "-o", pkg_dir, pkg)
+            pkg_cmd("fetch", "--dependencies", "-o", pkg_dir, "pkg", *self.packages.split())
             pkg_cmd("repo", pkg_dir)
 
             pkg_version = pkg_cmd("rquery", "%v", "pkg", capture_output=True).stdout
@@ -441,9 +440,7 @@ class FreeBSDVMImageTask(Task):
                                 # Install pkg(8).
                                 IGNORE_OSVERSION=yes pkg add -r local pkg-{pkg_version}*
                                 # Install the requested packages.
-                                for pkg in {self.packages}; do
-                                    IGNORE_OSVERSION=yes pkg install -y -r local ${{pkg}}
-                                done
+                                IGNORE_OSVERSION=yes pkg install -y -r local {self.packages}
                             }}
 
                             if [ -f /firstboot ]; then
@@ -581,6 +578,10 @@ class FreeBSDVMBootTask(Task):
         ),
     }
 
+    outputs = {
+        'vm': Optional[FreeBSDVM],
+    }
+
     def run(self, ctx):
         cls = QEMURun if self.hypervisor == VMHypervisor.QEMU else BhyveRun
         vmrun = cls(
@@ -588,19 +589,21 @@ class FreeBSDVMBootTask(Task):
             memory=self.memory,
             ncpus=self.ncpus,
         )
+
+        # Save ssh and gdb addresses for later use.
+        with open(Path.cwd() / "gdb-addr", "w") as f:
+            f.write(f"{vmrun.gdb_addr[0]}:{vmrun.gdb_addr[1]}")
+        with open(Path.cwd() / "ssh-addr", "w") as f:
+            f.write(f"{vmrun.ssh_addr[0]}:{vmrun.ssh_addr[1]}")
+
         cmd = vmrun.setup()
         if self.interactive:
             self.run_cmd(cmd)
+            vm = None
         else:
-            child = pexpect.spawn(' '.join(cmd), logfile=sys.stdout.buffer, timeout=300)
-            patterns = ["login:", "panic:"]
-            pattern = child.expect_exact(patterns)
-            if pattern == 1:
-                raise RuntimeError("VM panicked during boot")
-            child.sendline("root")
-            child.expect("root@.*#")
+            vm = FreeBSDVM(cmd)
 
-        return {}
+        return {'vm': vm}
 
 
 class FreeBSDRegressionTestSuiteBuildTask(FreeBSDSrcBuildAndInstallTask):
@@ -661,10 +664,32 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
     name = "freebsd-regression-test-suite"
 
     interactive = False
+    ncpus = os.cpu_count() // 2
+    memory = 1024 * (os.cpu_count() // 2)
+
+    parameters = {
+        'tests': TaskParameter(
+            description="A space-separated list of test cases or test suites to run, "
+                        "or the empty string to run all tests",
+            default="",
+        ),
+    }
 
     inputs = {
         'vm_image': FreeBSDRegressionTestSuiteVMImageTask,
     }
+
+    def run(self, ctx):
+        outputs = super().run(ctx)
+        vm: FreeBSDVM = outputs['vm']
+        if vm is None:
+            raise ValueError(
+                "Cannot run tests, VM must be run in non-interactive mode"
+            )
+        vm.boot_to_login()
+        vm.sendline(f"/usr/tests/run-kyua -r /root/kyua.db {self.tests}")
+        vm.wait_for_prompt(timeout=10*3600)
+        return {}
 
 
 class EC2Provider:
@@ -791,7 +816,7 @@ class EC2Provider:
 
 class EC2MetaTask(Task):
     parameters = {
-        # XXX-MJ need a mechanism to set a default value for this from config
+        # XXX-MJ need a mechanism to set a default value for this from the config file
         'aws_region': TaskParameter(
             description="AWS region to use",
             default="us-east-1",
@@ -910,7 +935,7 @@ class EC2ListInstanceTypesTask(EC2MetaTask):
 # - tasks to boot FreeBSD in different clouds
 # - tasks for performance regression testing
 # - integration with project infrastructure, e.g., bugzilla, phabricator
-#   - src builds could have an option to apply patches from phab first, for instance
+#   - src builds could have an option to apply patches from phab/GH first, for instance
 #
 def main() -> int:
     config = Config()
@@ -944,6 +969,7 @@ def main() -> int:
 
     sched = TaskSchedule(config)
     if args.show:
+        # XXX-MJ the formatting here is not good and we're omitting some info
         print(f"{sched.target.name}:")
         if len(sched.target.description) > 0:
             print(sched.target.description)

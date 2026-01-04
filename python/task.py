@@ -370,6 +370,7 @@ class TaskSchedule:
                     node.task.skip = True
 
     def run(self):
+        self.config.lock()
         # Do any tasks have unbound required parameters?  Raise an error if so.
         # We check this here rather than in the constructor so that it's possible
         # to do things like list unbound parameters in a schedule.
