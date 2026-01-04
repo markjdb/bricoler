@@ -62,7 +62,7 @@ class TaskMeta(ABCMeta):
             )
 
         # Any members must be a parameter value.
-        parameters = getattr(cls, 'parameters')
+        parameters = cls._merged_parameters
         for name in namespace.keys():
             if name.startswith('_'):
                 continue
@@ -70,7 +70,7 @@ class TaskMeta(ABCMeta):
                 continue
             if name not in parameters:
                 raise ValueError(
-                    f"Member '{name}' in task '{cls.name}' is not defined as a parameter"
+                    f"Member '{name}' in task '{cls.name}' is not a defined parameter"
                 )
 
     @classmethod

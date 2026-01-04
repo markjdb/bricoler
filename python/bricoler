@@ -18,8 +18,6 @@ from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Type, Union
 
-# XXX-MJ this should be optional
-import boto3
 import pexpect
 
 from config import Config
@@ -275,6 +273,9 @@ class FreeBSDVMImageTask(Task):
             type=Path,
             # XXX-MJ should be a default
         ),
+        'rc_kld_list': TaskParameter(
+            description="A list of kernel modules to load at boot time",
+        ),
         'swap_size': TaskParameter(
             description="Size of the swap partition",
             default="2G",
@@ -342,6 +343,10 @@ class FreeBSDVMImageTask(Task):
                         "PermitRootLogin without-password",
                         source=(stagedir / "etc/ssh/sshd_config"))
 
+        if self.rc_kld_list is not None:
+            kld_list = self.rc_kld_list.split()
+        else:
+            kld_list = []
         add_config_file("etc/rc.conf",
                         f"hostname={self.hostname}",
                         "ifconfig_vtnet0=SYNCDHCP",
@@ -349,6 +354,7 @@ class FreeBSDVMImageTask(Task):
                         "defaultroute_delay=2",
                         "sshd_enable=YES",
                         "sshd_rsa_enable=NO",
+                        *[f"kld_list=\"${{kld_list}} {kld}\"" for kld in kld_list],
                         f"""
                         zfs_enable=YES
                         zpool_reguid={zfs_pool_name}
@@ -634,14 +640,48 @@ class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
 
     packages = " ".join([
         "coreutils",
+        "filesystems/ext2",
         "gdb",
         "git-lite",
         "gtar",
-        "perl5",
+        "isc-dhcp44-server",
         "jq",
         "ksh93",
         "llvm",
-        "nmap"
+        "nist-kat",
+        "nmap",
+        "openvpn",
+        "perl5",
+        "porch",
+        "python",
+        "python3",
+        "devel/py-pytest",
+        "net/scapy",
+        "sg3_utils",
+        "sudo",
+    ])
+
+    rc_kld_list = " ".join([
+        "accf_data", "accf_dns", "accf_http", "accf_tls",
+        "blake2",
+        "carp",
+        "cfiscsi",
+        "cryptodev",
+        "ctl",
+        "dummymbuf",
+        "dummynet",
+        "fusefs",
+        "if_bridge", "if_enc", "if_epair", "if_ovpn", "if_stf",
+        "ipdivert",
+        "ipfw", "ipfw_nat",
+        "ipl",
+        "ipsec",
+        "mac_bsdextended", "mac_ipacl", "mac_portacl", "mqueuefs",
+        "pf", "pflog", "pflow", "pfsync",
+        "sctp",
+        "snd_dummy",
+        "tarfs",
+        "tcpmd5",
     ])
 
     sysctls = " ".join([
@@ -667,16 +707,16 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
     ncpus = os.cpu_count() // 2
     memory = 1024 * (os.cpu_count() // 2)
 
+    inputs = {
+        'vm_image': FreeBSDRegressionTestSuiteVMImageTask,
+    }
+
     parameters = {
         'tests': TaskParameter(
             description="A space-separated list of test cases or test suites to run, "
                         "or the empty string to run all tests",
             default="",
         ),
-    }
-
-    inputs = {
-        'vm_image': FreeBSDRegressionTestSuiteVMImageTask,
     }
 
     def run(self, ctx):
@@ -697,6 +737,10 @@ class EC2Provider:
     ssh_key_dir: Path
 
     def __init__(self, config: Config, region: str):
+        # Lazy import since this takes a bit of time (>100ms on a Zen 4).
+        # We should perhaps hide EC2 tasks if the module isn't available.
+        import boto3
+
         self.config = config
         self.client = boto3.client('ec2', region)
         self.resource = boto3.resource('ec2', region)
