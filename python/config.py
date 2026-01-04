@@ -11,7 +11,7 @@ import os
 import sys
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class Config:
@@ -89,7 +89,11 @@ class Config:
             None
         )
 
-    def load(self, lookup) -> argparse.Namespace:
+    def load(self, lookup) -> Tuple[argparse.Namespace, Optional[List[str]]]:
+        """
+        Load the configuration file and parse command-line arguments.  Return
+        task parameters and any auxilliary action.
+        """
         # Parse global arguments and the task name.
         opts, args = self.parser.parse_known_args()
 
@@ -147,11 +151,15 @@ class Config:
         # --<task>/<param>=<value>.  At some point we want to support
         # <param>+=<value> to augment default values instead of replacing them,
         # and <param>@=<filename> to read values from a file.
+        #
+        # We also support an auxilliary action name after the task,
+        # e.g., bricoler freebsd-vm-boot ssh to ssh into a running task VM.
+        action = None
         for arg in args:
             if not arg.startswith('--'):
-                raise ValueError(
-                    f"Task parameters must start with '--': {arg}"
-                )
+                if action is None:
+                    action = args[args.index(arg):]
+                    break
             arg = arg[2:]
             if '=' not in arg:
                 raise ValueError(
@@ -179,7 +187,7 @@ class Config:
             self.task_params[task_name][param_name] = param.str2val(val)
             self.command_line_parameters.append(arg)
 
-        return opts
+        return (opts, action)
 
     def lock(self):
         # Lock the configuration file to prevent concurrent modifications.

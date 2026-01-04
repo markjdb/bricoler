@@ -14,10 +14,10 @@
 # invokable or otherwise visible in the UI, but can be used to factor out common
 # functionality and parameters.
 #
-# Tasks can inherit from other tasks.  They can override parameter values by defining
-# the parameter as a class attribute.  In general class inheritance works as normal,
-# but the "inputs" and "parameters" dictionaries are merged from parent classes, providing
-# way to extend and customize tasks.
+# Tasks can inherit from other tasks.  They can override parameter values by
+# defining the parameter as a class attribute.  In general class inheritance
+# works as normal, but the "inputs" and "parameters" dictionaries are merged
+# from parent classes, providing a way to extend and customize tasks.
 #
 
 import inspect
@@ -36,6 +36,7 @@ from util import chdir, run_cmd
 class TaskMeta(ABCMeta):
     _registry: Dict[str, Type['Task']] = {}
     _reserved_names: Set[str] = {
+        'actions',
         'bindings',
         'config',
         'description',
@@ -62,7 +63,7 @@ class TaskMeta(ABCMeta):
             )
 
         # Any members must be a parameter value.
-        parameters = cls._merged_parameters
+        parameters = cls._chained_parameters
         for name in namespace.keys():
             if name.startswith('_'):
                 continue
@@ -84,7 +85,7 @@ class TaskMeta(ABCMeta):
         # Do some validation of the task definition.
         #
         # Ensure that the input parameter names are disjoint.
-        overlap = cls._merged_inputs.keys() & cls._merged_parameters.keys()
+        overlap = cls._chained_inputs.keys() & cls._chained_parameters.keys()
         if len(overlap) > 0:
             raise ValueError(
                 f"Task '{name}' has overlapping names: {', '.join(overlap)}"
@@ -125,14 +126,12 @@ class TaskMeta(ABCMeta):
     def __new__(mcs, name, bases, namespace):
         cls = super().__new__(mcs, name, bases, namespace)
 
-        parent_parameters = [
-            b._merged_parameters for b in bases if hasattr(b, '_merged_parameters')
-        ]
-        cls._merged_parameters = ChainMap(cls.parameters, *parent_parameters)
-        parent_inputs = [
-            b._merged_inputs for b in bases if hasattr(b, '_merged_inputs')
-        ]
-        cls._merged_inputs = ChainMap(cls.inputs, *parent_inputs)
+        for table in ["actions", "inputs", "parameters"]:
+            chained = f"_chained_{table}"
+            setattr(cls,
+                    chained,
+                    ChainMap(getattr(cls, table),
+                             *[getattr(b, chained) for b in bases if hasattr(b, chained)]))
 
         if not inspect.isabstract(cls):
             task_name = namespace.get('name')
@@ -231,17 +230,21 @@ class TaskParameterBinding:
 
 
 class Task(ABC, metaclass=TaskMeta):
+    actions: Dict[str, Any] = {}
     bindings: Dict[str, TaskParameterBinding]
     config: Config
-    _final_outputs: Optional[Dict[str, Any]] = None
     name: str
     description: str = ''
     inputs: Dict[str, Type['Task']] = {}
     outputs: Dict[str, Any] = {}
     parameters: Dict[str, TaskParameter] = {}
-    _merged_inputs: ChainMap[str, Type['Task']]
-    _merged_parameters: ChainMap[str, TaskParameter]
     skip: bool = False
+
+    _chained_actions: ChainMap[str, Any]
+    _chained_inputs: ChainMap[str, Type['Task']]
+    _chained_parameters: ChainMap[str, TaskParameter]
+    _final_outputs: Optional[Dict[str, Any]] = None
+    _finished: bool
 
     def __init__(self, config: Config):
         super().__init__()
@@ -249,17 +252,17 @@ class Task(ABC, metaclass=TaskMeta):
         self.config = config
         self._finished = False
 
-        for name, param in self._merged_parameters.items():
+        for name, param in self._chained_parameters.items():
             self.bind({name: param.default},
                       TaskParameterBinding.BindingType.DEFAULT)
         for name in dir(self.__class__):
-            if name in self._merged_parameters:
+            if name in self._chained_parameters:
                 self.bind({name: getattr(self, name)},
                           TaskParameterBinding.BindingType.OVERRIDDEN)
 
     def bind(self, params: Dict[str, Any], source: TaskParameterBinding.BindingType) -> None:
         for name, param in params.items():
-            if name not in self._merged_parameters:
+            if name not in self._chained_parameters:
                 raise ValueError(
                     f"Task '{self.name}' has no parameter named '{name}'"
                 )
@@ -267,11 +270,11 @@ class Task(ABC, metaclass=TaskMeta):
 
     @classmethod
     def get_parameter(self, name: str) -> TaskParameter:
-        return self._merged_parameters[name]
+        return self._chained_parameters[name]
 
     @classmethod
     def get_parameter_keys(self) -> List[str]:
-        return list(self._merged_parameters.keys())
+        return list(self._chained_parameters.keys())
 
     def _run(self, ctx: SimpleNamespace) -> Dict[str, Any]:
         if self._final_outputs is not None:
@@ -299,6 +302,10 @@ class Task(ABC, metaclass=TaskMeta):
             self._final_outputs = outputs
             return outputs
 
+    def _run_action(self, action_name: str, action_args: List[str]) -> Any:
+        with chdir(Path.cwd() / self.name):
+            self.actions[action_name](self, action_args)
+
     def run_cmd(self, cmd: List[Any], *args, **kwargs) -> subprocess.CompletedProcess:
         # Ignore self.skip if the caller needs command output.
         skip = self.skip and not kwargs.get('capture_output', False)
@@ -316,7 +323,7 @@ class TaskSchedule:
         def __init__(self, task: Type[Task], config: Config):
             self.task = task(config)
             self.children = {}
-            for name, input in task._merged_inputs.items():
+            for name, input in task._chained_inputs.items():
                 self.children[name] = TaskSchedule.TaskScheduleNode(input, config)
 
         def _run(self, ctx: SimpleNamespace) -> Dict[str, Any]:
@@ -376,7 +383,7 @@ class TaskSchedule:
         # to do things like list unbound parameters in a schedule.
         for node in self.schedule:
             required = {
-                name for name, param in node.task._merged_parameters.items() if param.required
+                name for name, param in node.task._chained_parameters.items() if param.required
             }
             bindings = {
                 name for name, param in node.task.bindings.items() if param.value is not None
@@ -391,16 +398,26 @@ class TaskSchedule:
         with chdir(self.config.workdir):
             self.schedule._run(ctx)
 
+    def run_action(self, action_name: str, action_args: List[str]):
+        task = self.schedule.task
+        if action_name not in task.actions:
+            available = ', '.join(task.actions.keys())
+            raise ValueError(
+                f"'{task.name}' has no action '{action_name}', available actions are: {available}"
+            )
+        with chdir(self.config.workdir):
+            task._run_action(action_name, action_args)
+
     @property
     def parameters(self) -> Dict[str, Tuple[TaskParameter, Any]]:
         """Return a mapping of parameter names to their values in the schedule."""
         result: Dict[str, Any] = {}
 
         def _collect(node: TaskSchedule.TaskScheduleNode):
-            for name in node.task._merged_parameters.keys():
+            for name in node.task._chained_parameters.keys():
                 val = node.task.bindings.get(name, None)
                 result[f"{node.task.name}/{name}"] = (
-                    node.task._merged_parameters[name], val
+                    node.task._chained_parameters[name], val
                 )
 
             for child in node.children.values():
