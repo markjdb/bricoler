@@ -238,7 +238,8 @@ class FreeBSDVMImageTask(Task):
 
     outputs = {
         'image': VMImage,
-        'ssh_key': Path
+        'ssh_key': Path,
+        'sysroot': Path,
     }
 
     parameters = {
@@ -545,6 +546,7 @@ class FreeBSDVMImageTask(Task):
         self.run_cmd(mkimg_cmd)
 
         outputs['image'] = VMImage(vm_image_path, machine)
+        outputs['sysroot'] = stagedir
 
         return outputs
 
@@ -605,6 +607,10 @@ class FreeBSDVMBootTask(Task):
         ssh_key_dest = Path.cwd() / "ssh_key"
         ssh_key_dest.unlink(missing_ok=True)
         ssh_key_dest.symlink_to(self.vm_image.ssh_key)
+        # Symlink the staging directory so that we can easily find kernel symbols.
+        sysroot = Path.cwd() / "sysroot"
+        sysroot.unlink(missing_ok=True)
+        sysroot.symlink_to(self.vm_image.sysroot)
 
         cmd = vmrun.setup()
         if self.interactive:
@@ -614,6 +620,23 @@ class FreeBSDVMBootTask(Task):
             vm = FreeBSDVM(cmd)
 
         return {'vm': vm}
+
+    def _gdb(self, *args):
+        if shutil.which("gdb") is None:
+            raise ValueError("gdb is not available")
+        sysroot = Path(os.readlink(Path.cwd() / "sysroot"))
+        with open(Path.cwd() / "gdb-addr", "r") as f:
+            addr = f.read().strip()
+        (host, portstr) = addr.split(':', maxsplit=1)
+        port = int(portstr)
+        gdb_cmd = [
+            "gdb",
+            "-ex", f"set sysroot {Path.cwd() / sysroot}",
+            "-ex", f"file {sysroot / 'boot/kernel/kernel'}",
+            "-ex", f"source {sysroot / 'usr/lib/debug/boot/kernel/kernel-gdb.py'}",
+            "-ex", f"target remote {host}:{port}",
+        ]
+        self.run_cmd(gdb_cmd)
 
     def _ssh(self, *args):
         with open(Path.cwd() / "ssh-addr", "r") as f:
@@ -631,6 +654,7 @@ class FreeBSDVMBootTask(Task):
         self.run_cmd(ssh_cmd)
 
     actions = {
+        'gdb': _gdb,
         'ssh': _ssh,
     }
 
