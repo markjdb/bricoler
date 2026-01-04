@@ -212,7 +212,7 @@ class FreeBSDVM:
             self.panicstr = panicstr
             self.cpuid = cpuid
             self.backtrace = backtrace
-            super().__init__("{message}: {panicstr}")
+            super().__init__(f"{message}: {panicstr}")
 
     def __init__(self, cmd: List[Any], logfile=sys.stdout.buffer):
         self.cmd = cmd
