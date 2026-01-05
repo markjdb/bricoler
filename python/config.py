@@ -144,7 +144,7 @@ class Config:
                     raise ValueError(
                         f"Unknown task '{alias['task']}' in alias '{opts.task}'"
                     )
-                args += [f"--{param}" for param in alias['parameters']]
+                args = [f"--{param}" for param in alias['parameters']] + args
             self.task = task
 
         # Parse task-specific arguments.  These are of the form

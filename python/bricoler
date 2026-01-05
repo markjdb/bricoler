@@ -18,8 +18,6 @@ from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Type, Union
 
-import pexpect
-
 from config import Config
 from git import GitRepository
 from mtree import MtreeFile
@@ -60,6 +58,12 @@ class FreeBSDSrcRepository(GitRepository):
 
 
 class GitCheckoutTask(Task):
+    """
+    Clone a git repository, or update an existing clone.
+
+    Alternately, pass a filesystem path for the "url" parameter instead
+    of a URL or ssh address to use an existing local clone.
+    """
     name = "git-checkout"
 
     parameters = {
@@ -82,10 +86,13 @@ class GitCheckoutTask(Task):
 
 
 class FreeBSDSrcGitCheckoutTask(GitCheckoutTask):
+    """
+    Clone the FreeBSD src tree, or update an existing clone.
+    """
     name = "freebsd-src-git-checkout"
 
-    url = 'anongit@git.freebsd.org:src.git'
-    branch = 'main'
+    url = "anongit@git.freebsd.org:src.git"
+    branch = "main"
 
     outputs = {
         'repo': FreeBSDSrcRepository,
@@ -99,6 +106,10 @@ class FreeBSDSrcGitCheckoutTask(GitCheckoutTask):
 
 
 class FreeBSDSrcBuildTask(Task):
+    """
+    Build a FreeBSD source tree.  On its own this does nothing, the invoker
+    needs to specify some build targets.
+    """
     name = "freebsd-src-build"
 
     parameters = {
@@ -229,6 +240,10 @@ class FreeBSDVMImageFilesystem(Enum):
 
 
 class FreeBSDVMImageTask(Task):
+    """
+    Build a FreeBSD VM image, optionally adding an overlay tree, installing
+    packages, and applying other customizations.
+    """
     name = "freebsd-vm-image"
 
     inputs = {
@@ -384,7 +399,7 @@ class FreeBSDVMImageTask(Task):
 
         if self.packages is not None:
             major = self.src.FreeBSD_version // 100000
-            pkgabi = f"FreeBSD:{major}:{machine.split('/')[0]}"
+            pkgabi = f"FreeBSD:{major}:{machine.split('/')[1]}"
 
             pkg_root = Path.cwd() / "pkg" / pkgabi
             cache_dir = pkg_root / "cache"
@@ -552,6 +567,13 @@ class FreeBSDVMImageTask(Task):
 
 
 class FreeBSDVMBootTask(Task):
+    """
+    Boot a FreeBSD VM image using QEMU or bhyve.
+
+    In interactive mode, the VM console is provided on standard stdin/stdout,
+    and this task does not return until the VM exits.  In non-interactive mode,
+    bricoler owns the console and can interact with it
+    """
     name = "freebsd-vm-boot"
 
     inputs = {
@@ -729,6 +751,7 @@ class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
         "snd_dummy",
         "tarfs",
         "tcpmd5",
+        "zfs",
     ])
 
     sysctls = " ".join([
@@ -748,6 +771,9 @@ class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
 
 
 class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
+    """
+    Boot a virtual machine and run the FreeBSD regression test suite.
+    """
     name = "freebsd-regression-test-suite"
 
     interactive = False
@@ -759,6 +785,16 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
     }
 
     parameters = {
+        'count': TaskParameter(
+            description="Number of times to run the tests",
+            type=int,
+            default=1,
+        ),
+        'parallelism': TaskParameter(
+            description="Number of tests to run in parallel",
+            type=int,
+            default=os.cpu_count() // 2,  # XXX-MJ duplicating the ncpus value
+        ),
         'tests': TaskParameter(
             description="A space-separated list of test cases or test suites to run, "
                         "or the empty string to run all tests",
@@ -776,12 +812,60 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
 
         try:
             vm.boot_to_login()
-            vm.sendline(f"/usr/tests/run-kyua -r /root/kyua.db {self.tests}")
+            cmd = [
+                "/usr/tests/run-kyua",
+                "-c", str(self.count),
+                "-j", str(self.parallelism),
+                "-r", "/root/kyua.db",
+                self.tests
+            ]
+            vm.sendline(" ".join(cmd))
             vm.wait_for_prompt(timeout=10*3600)
         except FreeBSDVM.PanicException as e:
             # XXX-MJ should optionally attach gdb to the guest here
             raise e
-        return {}
+        return outputs
+
+
+class FreeBSDDTraceTestSuiteBuildTask(FreeBSDRegressionTestSuiteBuildTask):
+    make_options = FreeBSDRegressionTestSuiteBuildTask.make_options + " WITH_DTRACE_TESTS="
+
+
+class FreeBSDDTraceTestSuiteVMImageTask(FreeBSDRegressionTestSuiteVMImageTask):
+    packages = " ".join([
+        "binutils",
+        "jq",
+        "libxml2",
+        "llvm",
+        "nmap",
+        "pdksh",
+        "perl5",
+    ])
+
+    rc_kld_list = " ".join([
+        "dtraceall",
+        "dtrace_test",
+        "kinst",
+        "sctp"
+    ])
+
+    inputs = {
+        'build': FreeBSDDTraceTestSuiteBuildTask,
+    }
+
+
+class FreeBSDDTraceTestSuiteTask(FreeBSDRegressionTestSuiteTask):
+    """
+    Boot a virtual machine and run the FreeBSD DTrace regression test suite.
+    """
+    name = "freebsd-dtrace-test-suite"
+
+    parallelism = 1
+    tests = "cddl/usr.sbin/dtrace"
+
+    inputs = {
+        'vm_image': FreeBSDDTraceTestSuiteVMImageTask,
+    }
 
 
 class EC2Provider:
@@ -923,6 +1007,9 @@ class EC2MetaTask(Task):
 
 
 class EC2LaunchTask(EC2MetaTask):
+    """
+    Launch an EC2 instance accessible via ssh.
+    """
     name = "ec2-launch-freebsd"
 
     parameters = {
@@ -955,14 +1042,21 @@ class EC2LaunchTask(EC2MetaTask):
             volume_size=self.volume_size,
             tag_value=str(self.config.uuid),
         )
+        # XXX-MJ still need to ensure that the security group allows ssh access
         info(f"Instance launched: {instance.id}")
         info(f"SSH command: ssh -i {keyfile} ec2-user@{instance.public_dns_name}")
         return {}
 
 
 class EC2CleanTask(EC2MetaTask):
+    """
+    Clean up EC2 resources created by bricoler.
+
+    By default it only cleans up resources created in the current workdir; the
+    "all" parameter can be used to clean up all resources created by bricoler
+    using a given IAM account.
+    """
     name = "ec2-clean"
-    description = "Clean up EC2 resources created by bricoler"
 
     parameters = {
         'all': TaskParameter(
@@ -979,6 +1073,9 @@ class EC2CleanTask(EC2MetaTask):
 
 
 class EC2ListAMIsTask(EC2MetaTask):
+    """
+    List FreeBSD AMIs available from the specified owner.
+    """
     name = "ec2-list-freebsd-amis"
 
     parameters = {
@@ -996,6 +1093,9 @@ class EC2ListAMIsTask(EC2MetaTask):
 
 
 class EC2ListInstanceTypesTask(EC2MetaTask):
+    """
+    List all EC2 instance types in a given region.
+    """
     name = "ec2-list-instance-types"
 
     parameters = {
@@ -1069,11 +1169,12 @@ def main() -> int:
     if args.show:
         # XXX-MJ the formatting here is not good and we're omitting some info
         print(f"{sched.target.name}:")
-        if len(sched.target.description) > 0:
-            print(sched.target.description)
+        if sched.target.__class__.__doc__ is not None:
+            print(sched.target.__class__.__doc__.strip() + "\n")
         else:
             print("")
         if len(sched.target.parameters) > 0:
+            print("Parameters:")
             width = max(len(name) for name in sched.parameters.keys()) + 2
             for name, param in sched.parameters.items():
                 print(f"{name+':':<{width}} {param[0].description}")
@@ -1081,7 +1182,9 @@ def main() -> int:
     elif args.list:
         for task in sched.tasks.values():
             for name in task.__class__.get_parameter_keys():
-                print(f"{task.name}/{name}")
+                print(f"--{task.name}/{name}")
+        for name in sched.target.__class__.get_action_names():
+            print(f"{name}")
     elif action is not None:
         sched.run_action(action[0], action[1:])
     else:

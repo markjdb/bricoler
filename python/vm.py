@@ -260,7 +260,7 @@ class FreeBSDVM:
             logfile=self.logfile,
         )
         try:
-            self.expect("login:", timeout=300)
+            self.expect("login:", timeout=600)
             self.sendline("root")
             self.wait_for_prompt()
         except self.PanicException as e:

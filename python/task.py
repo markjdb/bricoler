@@ -39,7 +39,6 @@ class TaskMeta(ABCMeta):
         'actions',
         'bindings',
         'config',
-        'description',
         'inputs',
         'name',
         'outputs',
@@ -234,7 +233,6 @@ class Task(ABC, metaclass=TaskMeta):
     bindings: Dict[str, TaskParameterBinding]
     config: Config
     name: str
-    description: str = ''
     inputs: Dict[str, Type['Task']] = {}
     outputs: Dict[str, Any] = {}
     parameters: Dict[str, TaskParameter] = {}
@@ -267,6 +265,10 @@ class Task(ABC, metaclass=TaskMeta):
                     f"Task '{self.name}' has no parameter named '{name}'"
                 )
             self.bindings[name] = TaskParameterBinding(value=param, source=source)
+
+    @classmethod
+    def get_action_names(self) -> List[str]:
+        return list(self._chained_actions.keys())
 
     @classmethod
     def get_parameter(self, name: str) -> TaskParameter:

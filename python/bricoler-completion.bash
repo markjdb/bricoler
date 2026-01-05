@@ -9,7 +9,7 @@ _bricoler_completions()
     local all_opts cmd cur params prev task tasks
 
     cmd=$1
-    options="--show --list --workdir"
+    options="--skip --show --list --workdir"
     tasks=$(BRICOLER_ARGCOMPLETE=1 "$cmd" -l 2>/dev/null)
 
     cur="${COMP_WORDS[COMP_CWORD]}"
@@ -24,7 +24,7 @@ _bricoler_completions()
         *)
             all_opts=0
             task="$word"
-            params=$(BRICOLER_ARGCOMPLETE=1 "$cmd" $task -l 2>/dev/null | awk '{print "--"$1"="}')
+            params=$(BRICOLER_ARGCOMPLETE=1 "$cmd" $task -l 2>/dev/null)
             break
             ;;
         esac
@@ -43,7 +43,7 @@ _bricoler_completions()
     if [ "$COMP_CWORD" -ge 2 -a "${COMP_WORDS[1]}" = "run" ]; then
         # Assume that the argument following "run" is the task name.
         # This doesn't have to be true, maybe we should try harder...
-        params=$(BRICOLER_ARGCOMPLETE=1 "$cmd" -l ${COMP_WORDS[2]} 2>/dev/null | awk '{print $1"="}')
+        params=$(BRICOLER_ARGCOMPLETE=1 "$cmd" -l ${COMP_WORDS[2]} 2>/dev/null)
     fi
 
     case $prev in

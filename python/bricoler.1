@@ -1,0 +1,129 @@
+.\"
+.\" Copyright (c) Mark Johnston <markj@FreeBSD.org>
+.\"
+.\" SPDX-License-Identifier: BSD-2-Clause
+.\"
+.Dd January 1, 2026
+.Dt bricoler 1
+.Os
+.Sh NAME
+.Nm bricoler
+.Nd A utility to simplify FreeBSD development tasks
+.Sh SYNOPSIS
+.Nm
+.Op Fl -show
+.Nm
+.Ar task
+.Op Fl -show
+.Nm
+.Op Fl -workdir Ar path
+.Ar task
+.Op Fl -<task1>/<param1>=<val1> Op Fl -<task2>/<param2>=<val2> Op ...
+.Op Fl -alias Ar alias
+.Op Fl -skip
+.Nm
+.Ar task Ar action Op Ar args
+.Sh DESCRIPTION
+.Nm
+is a utility which automates common
+.Fx
+development tasks.
+It aims to provide a consistent interface to a number of different workflows,
+wrapping existing tools and scripts when possible.
+The goal is to hide much of the complexity of the underlying programs, which
+do not have consistent user interfaces, require manual setup, or have poor input
+validation.
+.Nm
+further aims to be useful both as an interactive tool for obtaining a development
+or test environment, as well as a substrate for CI systems to build and test
+.Fx .
+.Pp
+.Nm
+provides the ability to run
+.Dq tasks ,
+which are composable units of work.
+For example, to take the latest
+.Fx
+src tree, build it, boot it in a virtual machine, and run the test suite, one
+needs to:
+.Bl -enum -offset indent -compact
+.It
+clone the src tree,
+.It
+build the world and kernel,
+.It
+create a VM image,
+.It
+boot the VM under a hypervisor,
+.It
+install various third-party packages required by the test suite, and
+load kernel modules,
+.It
+invoke
+.Xr kyua 1
+to run the test suite, and collect the result.
+.El
+.Pp
+In
+.Nm Ns 's
+execution model, these steps are all represented by distinct tasks.
+A list of available tasks can be listed by running
+.Pp
+.Dl bricoler --show
+.Pp
+Tasks define a set of parameters which can be set on the command-line, or by
+other tasks.
+For instance, the
+.Dq git-checkout
+task provides a mechanism to clone or update a git repository, and defines
+parameters to specify the repository URL and branch.
+A task to build
+.Fx
+defines parameters to specify the target architecture, kernel configuration
+name, and the toolchain to use, among others.
+To get a full list of parameters used to run a given task, run
+.Pp
+.Dl bricoler Ar task --show
+.Pp
+This will show both
+.Ar task Ns 's
+own parameters, as well as those of any tasks it depends on.
+.\" XXX-MJ mention workdirs, actions, aliases
+.Sh EXAMPLES
+Run the
+.Xr pf 4
+regression tests in an arm64 VM with 12 vCPUs running the GENERIC-KASAN kernel
+configuration:
+.Pp
+.Bd -literal
+bricoler freebsd-regression-test-suite --freebsd-regression-test-suite/tests=sys/netpfil/pf \\
+                                       --freebsd-regression-test-suite/ncpus=12 \\
+                                       --freebsd-src-build/machine=arm64/aarch64 \\
+                                       --freebsd-src-build/kernel_config=GENERIC-KASAN
+.Ed
+.Pp
+Define a persistent alias for the previous command, so that it can be invoked
+by simply running the
+.Dq arm64-pf
+pseudo-task:
+.Pp
+.Bd -literal
+bricoler freebsd-regression-test-suite ... --alias arm64-pf
+.Ed
+.Pp
+From another terminal, attach the GDB debugger to the running VM:
+.Pp
+.Bd -literal
+bricoler freebsd-regression-test-suite gdb
+.Ed
+.Pp
+To run the test suite against an externally managed src tree instead of
+one managed by
+.Nm ,
+set the
+.Dq url
+parameter:
+.Pp
+.Bd -literal
+bricoler freebsd-regression-test-suite --freebsd-src-git-checkout/url=/home/markj/src ...
+.Ed
