@@ -81,21 +81,59 @@ A task to build
 .Fx
 defines parameters to specify the target architecture, kernel configuration
 name, and the toolchain to use, among others.
-To get a full list of parameters used to run a given task, run
+To get a full list of parameters used to run the task
+.Ar task ,
+run:
 .Pp
 .Dl bricoler Ar task --show
 .Pp
-This will show both
+The output describes
 .Ar task Ns 's
-own parameters, as well as those of any tasks it depends on.
-.\" XXX-MJ mention workdirs, actions, aliases
+own parameters, as well as those of any tasks on which it depends.
+It also shows the current values of those parameters based on task defaults
+and command line options.
+.Pp
+Parameters can be set on the command-line using the syntax
+.Fl - Ns Ar task Ns / Ns Ar param Ns = Ns Ar value .
+Task parameters have types and
+.Nm
+their values are validated before task execution begins.
+.Pp
+.Nm
+tasks store their outputs and state in private working directories.
+The root of the working directory can be specified using the
+.Fl -workdir
+option.
+By default, the working directory is the value of the
+.Ev BRICOLER_WORKDIR
+environment variable, or
+.Pa ${HOME}/bricoler
+if that variable is not set.
+Only one
+.Nm
+instance may run tasks in a given working directory at a given point in time.
+.Pp
+The
+.Fl -alias
+option may be used to define persistent aliases for frequently used commands.
+The specified alias name may then be used as a pseudo-task to invoke the same
+task with the same parameters.
+Parameters may still be specified when invoking an alias, and command-line
+parameter values override those stored in the alias.
+Aliases are stored in the working directory.
+.Pp
+.Sh ENVIRONMENT
+.Bl -tag -offset indent
+.It Ev BRICOLER_WORKDIR
+Sets the root of the working directory tree.
+.El
 .Sh EXAMPLES
 Run the
 .Xr pf 4
 regression tests in an arm64 VM with 12 vCPUs running the GENERIC-KASAN kernel
 configuration:
 .Pp
-.Bd -literal
+.Bd -literal -offset indent
 bricoler freebsd-regression-test-suite --freebsd-regression-test-suite/tests=sys/netpfil/pf \\
                                        --freebsd-regression-test-suite/ncpus=12 \\
                                        --freebsd-src-build/machine=arm64/aarch64 \\
@@ -107,13 +145,17 @@ by simply running the
 .Dq arm64-pf
 pseudo-task:
 .Pp
-.Bd -literal
+.Bd -literal -offset indent
 bricoler freebsd-regression-test-suite ... --alias arm64-pf
 .Ed
 .Pp
 From another terminal, attach the GDB debugger to the running VM:
 .Pp
-.Bd -literal
+.Bd -literal -offset indent
+bricoler arm64-pf gdb
+.Ed
+or
+.Bd -literal -offset indent
 bricoler freebsd-regression-test-suite gdb
 .Ed
 .Pp
@@ -124,6 +166,6 @@ set the
 .Dq url
 parameter:
 .Pp
-.Bd -literal
+.Bd -literal -offset indent
 bricoler freebsd-regression-test-suite --freebsd-src-git-checkout/url=/home/markj/src ...
 .Ed
