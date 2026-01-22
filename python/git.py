@@ -47,14 +47,11 @@ class GitRepository:
         return run_cmd(['git', '-C', self.path] + cmd, *args, **kwargs)
 
     def clone(self):
-        if self.external:
-            # This repository is externally managed.
-            if not (self.path / ".git").is_dir():
+        if not (self.path / ".git").exists():
+            if self.external:
                 raise ValueError(
                     f"Repository path '{self.url}' does not exist or is not a repo clone"
                 )
-            return
-        if not (self.path / ".git").exists():
             cmd = ["git", "clone", "--depth=1"]
             if self.branch:
                 cmd += ["--branch", self.branch]
