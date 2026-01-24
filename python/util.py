@@ -74,7 +74,7 @@ def run_cmd(
         env = tmp
         assert kwargs.get('env') is None
         kwargs['env'] = env
-    result = subprocess.run(cmd, *args, **kwargs, check=True)
+    result = subprocess.run(cmd, *args, **kwargs)
     if check_result and result.returncode != 0:
         warn(f"Command failed: {' '.join(result.stderr)}")
         raise subprocess.CalledProcessError(result.returncode, cmd)
