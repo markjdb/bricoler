@@ -98,18 +98,18 @@ class BhyveRun(VMRun):
             return "e1000"
 
     def setup(self) -> List[Any]:
-        destroy_cmd = ["bhyvectl", "--vm=bricoler", "--destroy"]
+        destroy_cmd = ["mdo", "bhyvectl", "--vm=bricoler", "--destroy"]
         run_cmd(destroy_cmd, check_result=False)
 
-        bhyve_cmd = ["bhyve", "-c", self.ncpus, "-m", f"{self.memory}M"]
+        bhyve_cmd = ["mdo", "bhyve", "-c", self.ncpus, "-m", f"{self.memory}M"]
         devindex = 0
 
         def add_device(desc):
             nonlocal devindex
             bhyve_cmd.extend(["-s", f"{devindex}:0,{desc}"])
             devindex += 1
-
         add_device("hostbridge")
+
         bootrom = self.bootrom_path()
         if self.image.machine.startswith('amd64/') or self.image.machine.startswith('i386/'):
             bhyve_cmd.extend([
