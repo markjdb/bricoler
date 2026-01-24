@@ -110,17 +110,18 @@ class BhyveRun(VMRun):
             devindex += 1
 
         add_device("hostbridge")
+        bootrom = self.bootrom_path()
         if self.image.machine.startswith('amd64/') or self.image.machine.startswith('i386/'):
             bhyve_cmd.extend([
                 "-H",
                 "-l", "com1,stdio",
-                "-l", "bootrom,{bootrom}"
+                "-l", f"bootrom,{bootrom}"
             ])
             add_device("lpc")
         else:
             bhyve_cmd.extend([
                 "-o", "console=stdio",
-                "-o", "bootrom,{bootrom}"
+                "-o", f"bootrom,{bootrom}"
             ])
         add_device(f"{self.block_driver_name()},{self.image.path}")
 
