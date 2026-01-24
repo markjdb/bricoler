@@ -340,12 +340,12 @@ class FreeBSDVMImageTask(Task):
             if self.skip:
                 return
             path = Path(_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
             if source is not None:
                 shutil.copyfile(source, path)
                 mode = "a"
             else:
                 mode = "w"
-            path.parent.mkdir(parents=True, exist_ok=True)
             with path.open(mode) as f:
                 f.write(f"{comment_delimiter} Added by bricoler\n")
                 contents = [textwrap.dedent(arg).strip() for arg in args if arg != ""]
