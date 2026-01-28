@@ -29,8 +29,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Set, Tuple, Type
 
-from config import Config
-from util import chdir, run_cmd
+from .config import Config
+from .util import chdir, run_cmd
 
 
 class TaskMeta(ABCMeta):
