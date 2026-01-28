@@ -12,7 +12,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
-from util import run_cmd, unused_tcp_addr
+from .util import run_cmd, unused_tcp_addr
 
 import pexpect
 

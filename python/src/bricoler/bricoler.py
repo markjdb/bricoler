@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 #
 # Copyright (c) Mark Johnston <markj@FreeBSD.org>
 #
@@ -15,15 +13,16 @@ import sys
 import textwrap
 import time
 from enum import Enum
+from importlib import resources
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Type, Union
 
-from config import Config
-from git import GitRepository
-from mtree import MtreeFile
-from task import Task, TaskParameter, TaskMeta, TaskSchedule
-from util import chdir, host_machine, info, run_cmd, warn
-from vm import FreeBSDVM, VMImage, VMHypervisor, BhyveRun, QEMURun
+from .config import Config
+from .git import GitRepository
+from .mtree import MtreeFile
+from .task import Task, TaskParameter, TaskMeta, TaskSchedule
+from .util import chdir, host_machine, info, run_cmd, warn
+from .vm import FreeBSDVM, VMImage, VMHypervisor, BhyveRun, QEMURun
 
 
 class FreeBSDSrcRepository(GitRepository):
@@ -410,10 +409,11 @@ class FreeBSDVMImageTask(Task):
             repos_dir.mkdir(parents=True, exist_ok=True)
 
             # Set up a pkg repository configuration.
-            source = self.package_repo_file
-            if source is None:
-                source = self.config.files_dir / "pkg.conf"
-            shutil.copyfile(source, repos_dir / "pkg.conf")
+            if self.package_repo_file is None:
+                with resources.as_file(resources.files("bricoler") / "pkg.conf") as src:
+                    shutil.copyfile(src, repos_dir / "pkg.conf")
+            else:
+                shutil.copyfile(self.package_repo_file, repos_dir / "pkg.conf")
 
             def pkg_cmd(*args, **kwargs):
                 cmd = [
@@ -695,7 +695,8 @@ class FreeBSDRegressionTestSuiteBuildTask(FreeBSDSrcBuildAndInstallTask):
 
         # Manually install the run-kyua helper script.
         dest = outputs['stagedir'] / "usr/tests/run-kyua"
-        shutil.copyfile(self.config.files_dir / "run-kyua", dest)
+        with resources.as_file(resources.files("bricoler") / "run-kyua") as src:
+            shutil.copyfile(src, dest)
         outputs['metalog'].add_file(dest, Path("usr/tests/run-kyua"), mode=0o755)
         return outputs
 
@@ -1190,7 +1191,3 @@ def main() -> int:
     else:
         sched.run()
     return 0
-
-
-if __name__ == '__main__':
-    sys.exit(main())

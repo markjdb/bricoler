@@ -17,6 +17,7 @@ import stat
 from collections import OrderedDict
 from pathlib import Path, PurePath, PurePosixPath
 from typing import Dict, Iterator, List, Optional, Union
+from .util import warn
 
 
 class MtreePath(PurePosixPath):
@@ -208,7 +209,7 @@ class MtreeFile:
                 keystr = str(key)
                 assert keystr == "." or os.path.normpath(keystr[2:]) == keystr[2:]
                 if key in self._mtree and not entry.is_dir():
-                    raise ValueError(f"Duplicate entry for {key} in mtree file")
+                    warn(f"Duplicate entry for {key} in mtree file")
                 self._mtree[key] = entry
 
     @staticmethod

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union
 from urllib.parse import urlparse
 
-from util import run_cmd
+from .util import run_cmd
 
 
 class GitRepository:
