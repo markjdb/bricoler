@@ -458,7 +458,7 @@ class FreeBSDVMImageTask(Task):
                                 echo ""
                                 echo "bricoler: Running first-boot setup"
                                 # Older version of pkg(7) don't use basename().
-                                cd /{pkg_reldir}/All/Hashed
+                                cd /{pkg_reldir}/All
                                 # Install pkg(8).
                                 IGNORE_OSVERSION=yes pkg add -r local pkg-{pkg_version}*
                                 # Install the requested packages.
