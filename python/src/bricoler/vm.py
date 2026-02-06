@@ -139,14 +139,23 @@ class QEMURun(VMRun):
         'riscv': 'qemu-system-riscv64',
     }
 
-    def bios_path(self) -> Path:
+    def bios_path(self) -> Optional[Path]:
         bioses = {
             # XXX-MJ add some dict type which automatically checks for the path
             #        and suggests some recourse if it's not available
             'amd64': Path("/usr/local/share/edk2-qemu/QEMU_UEFI-x86_64.fd"),
             'arm64': Path("/usr/local/share/qemu/edk2-aarch64-code.fd"),
+            'riscv': Path("/usr/local/share/opensbi/lp64/generic/firmware/fw_jump.elf"),
         }
-        return bioses[self.image.machine.split('/', maxsplit=1)[0]]
+        return bioses.get(self.image.machine.split('/', maxsplit=1)[0], None)
+
+    def kernel_path(self) -> Optional[Path]:
+        kernels = {
+            # XXX-MJ add some dict type which automatically checks for the path
+            #        and suggests some recourse if it's not available
+            'riscv': Path("/usr/local/share/u-boot/u-boot-qemu-riscv64/u-boot.bin"),
+        }
+        return kernels.get(self.image.machine.split('/', maxsplit=1)[0], None)
 
     def block_driver_name(self) -> str:
         driver = self.block_driver
@@ -166,12 +175,12 @@ class QEMURun(VMRun):
                 f"Unsupported network driver {driver} is not supported by QEMU"
             )
 
-    def machine_type(self) -> Optional[str]:
+    def machine_type(self) -> str:
         machines = {
             'amd64': "q35",
             'arm64': "virt,gic-version=3",
         }
-        return machines.get(self.image.machine.split('/', maxsplit=1)[0], None)
+        return machines.get(self.image.machine.split('/', maxsplit=1)[0], 'virt')
 
     def setup(self) -> List[Any]:
         qemu_executable = self.executables.get(self.image.machine.split('/')[0])
@@ -187,7 +196,6 @@ class QEMURun(VMRun):
             "-cpu", "max",
             "-m", f"{self.memory}M",
             "-smp", self.ncpus,
-            "-bios", self.bios_path(),
             "-device", "virtio-rng-pci",
             "-device", f"{self.block_driver_name()},drive=image",
             "-drive", f"file={self.image.path},if=none,id=image,format=raw",
@@ -198,6 +206,12 @@ class QEMURun(VMRun):
         machine_type = self.machine_type()
         if machine_type is not None:
             qemu_cmd.extend(["-M", machine_type])
+        bios_path = self.bios_path()
+        if bios_path is not None:
+            qemu_cmd.extend(["-bios", bios_path])
+        kernel_path = self.kernel_path()
+        if kernel_path is not None:
+            qemu_cmd.extend(["-kernel", kernel_path])
 
         return [str(a) for a in qemu_cmd]
 
