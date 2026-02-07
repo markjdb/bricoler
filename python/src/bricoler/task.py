@@ -173,9 +173,7 @@ class TaskParameter:
         self.required = required
 
         if self.default is not None:
-            while callable(self.default):
-                self.default = self.default()
-            if not isinstance(self.default, self.type):
+            if not callable(self.default) and not isinstance(self.default, self.type):
                 raise TypeError(
                     f"Default value {type(self.default)} does not match parameter type {self.type}"
                 )
@@ -251,8 +249,10 @@ class Task(ABC, metaclass=TaskMeta):
         self._finished = False
 
         for name, param in self._chained_parameters.items():
-            self.bind({name: param.default},
-                      TaskParameterBinding.BindingType.DEFAULT)
+            # Callable defaults are handled when assembling the schedule.
+            if not callable(param.default):
+                self.bind({name: param.default},
+                          TaskParameterBinding.BindingType.DEFAULT)
         for name in dir(self.__class__):
             if name in self._chained_parameters:
                 self.bind({name: getattr(self, name)},
@@ -371,6 +371,21 @@ class TaskSchedule:
             raise ValueError(
                 f"Unknown tasks in command-line parameters: {unknown_tasks}"
             )
+
+        # Set default parameters that haven't been overridden by config or the
+        # command-line.
+        for node in self.schedule:
+            for name, param in node.task._chained_parameters.items():
+                if name in node.task.bindings:
+                    continue
+                assert callable(param.default)
+                default = param.default
+                while callable(default):
+                    default = default()
+                node.task.bind(
+                    {name: default},
+                    TaskParameterBinding.BindingType.DEFAULT
+                )
 
         # Mark dependent tasks to be skipped.
         if self.config.skip:
