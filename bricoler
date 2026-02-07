@@ -7,7 +7,7 @@
 --
 
 local scriptdir = arg[0]:match("(.+)/[^/]+$")
-package.path = package.path .. ";" .. scriptdir .. "/?.lua"
+package.path = scriptdir .. "/?.lua"
 
 package.path = package.path .. ";" .. scriptdir .. "/contrib/orch/install/share/lua/5.4/?.lua"
 package.cpath = package.cpath .. ";" .. scriptdir .. "/contrib/orch/install/lib/lua/5.4/?.so"
