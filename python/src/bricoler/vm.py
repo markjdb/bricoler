@@ -168,7 +168,8 @@ class QEMURun(VMRun):
 
     def machine_type(self) -> Optional[str]:
         machines = {
-            'arm64': 'virt,gic-version=3',
+            'amd64': "q35",
+            'arm64': "virt,gic-version=3",
         }
         return machines.get(self.image.machine.split('/', maxsplit=1)[0], None)
 
