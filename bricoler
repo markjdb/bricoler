@@ -868,7 +868,7 @@ local BhyveRun = Class({
 }, VMRun._props)
 
 function BhyveRun:_bootrom()
-    if self.machine_tuple == "amd64/amd64" then
+    if self.machine_tuple == "amd64/amd64" or self.machine_tuple == "i386/i386" then
         return {
             "/usr/local/share/uefi-firmware/BHYVE_UEFI.fd",
             "edk2-bhyve"
@@ -974,7 +974,7 @@ function BhyveRun:_ctor()
         if self.ssh_addr then
             -- This must be added after the first block device to work around a
             -- bhyve bug on arm64, see https://reviews.freebsd.org/D45049.
-            adddev(sprintf("%s,slirp,hostfwd=tcp:%s-:22", nic, self.ssh_addr))
+            adddev(sprintf("%s,slirp,open,hostfwd=tcp:%s-:22", nic, self.ssh_addr))
         end
         for tap in self.tap_list:gmatch("%S+") do
             adddev(nic .. "," .. tap)
@@ -1177,7 +1177,7 @@ function QEMURun:_ctor(args)
         if self.ssh_addr then
             table.append(qemuargs, "-device", "virtio-net-pci,netdev=net0")
             table.append(qemuargs, "-netdev",
-                         sprintf("user,id=net0,restrict=y,hostfwd=tcp:%s-:22,id=net0",
+                         sprintf("user,id=net0,hostfwd=tcp:%s-:22,id=net0",
                                  self.ssh_addr))
         end
         self.args = qemuargs
@@ -2864,7 +2864,7 @@ Task{"freebsd-src-vm-image",
             default = "coreutils python python3 devel/py-pytest net/scapy " ..
                       "perl5 jq ksh93 llvm gtar isc-dhcp44-server openvpn " ..
                       "sg3_utils sudo ndisc6 nmap nist-kat git-lite " ..
-                      "devel/py-twisted porch gdb filesystems/ext2 " ..
+                      "devel/py-twisted pimd porch gdb filesystems/ext2 " ..
                       "security/setaudit ",
         },
         ssh_users = {
@@ -3304,7 +3304,7 @@ Task{"freebsd-src-vm-image",
             default = "30g"
         },
         packages = {
-            default = "bash libunwind pamtester sudo",
+            default = "bash libunwind pamtester python3 sudo ksh93",
         },
         ssh_users = {
             -- It's useful to be able to log in to have a look around.
