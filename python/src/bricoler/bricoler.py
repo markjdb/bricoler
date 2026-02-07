@@ -584,7 +584,7 @@ class FreeBSDVMBootTask(Task):
         'hypervisor': TaskParameter(
             description="Hypervisor to use for running the VM",
             type=VMHypervisor,
-            default=VMHypervisor.QEMU,
+            default=lambda: VMHypervisor.BHYVE if BhyveRun.access() else VMHypervisor.QEMU,
         ),
         'interactive': TaskParameter(
             description="Run the VM in interactive mode",
@@ -718,6 +718,7 @@ class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
         "jq",
         "ksh93",
         "llvm",
+        "ndisc6",
         "nist-kat",
         "nmap",
         "openvpn",
@@ -726,6 +727,7 @@ class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
         "python",
         "python3",
         "devel/py-pytest",
+        "devel/py-twisted",
         "net/scapy",
         "sg3_utils",
         "sudo",
@@ -752,6 +754,7 @@ class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
         "snd_dummy",
         "tarfs",
         "tcpmd5",
+        "unionfs",
         "zfs",
     ])
 
@@ -777,6 +780,7 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
     """
     name = "freebsd-regression-test-suite"
 
+    # XXX-MJ kernel_config should be GENERIC-DEBUG on stable branches
     interactive = False
     ncpus = os.cpu_count() // 2
     memory = 1024 * (os.cpu_count() // 2)
