@@ -849,6 +849,7 @@ end
 function VMRun:scpfrom(user, key, src, dst)
     local addr, port = self.ssh_addr:match("([^:]+):(%d+)")
     exec("scp",
+         "-r",
          "-i", key,
          "-P", port,
          "-o", "StrictHostKeyChecking=no",
@@ -3252,6 +3253,8 @@ Task{
                 "./configure",
                 "MAKE=gmake",
                 "--with-config=user",
+                "--enable-invariants",
+                "--enable-debug",
             }
             if self.configure_args then
                 for arg in self.configure_args:gmatch("%S+") do
@@ -3304,7 +3307,7 @@ Task{"freebsd-src-vm-image",
             default = "30g"
         },
         packages = {
-            default = "bash libunwind pamtester python3 sudo ksh93",
+            default = "bash devel/py-sysctl fio libunwind pamtester python3 rsync sudo ksh93 xxhash",
         },
         ssh_users = {
             -- It's useful to be able to log in to have a look around.
@@ -3389,6 +3392,8 @@ Task{"freebsd-vm-boot",
             local disks = "vtbd1 vtbd2 vtbd3"
             self.VM:consrun(sprintf("DISKS=\"%s\" su -m tests -c \"%s\"", disks, cmd),
                             10 * 24 * 60 * 60)
+            local sshkey = self.vm_image.ssh_key_directory .. "/id_ed25519_root"
+            self.VM:scpfrom("root", sshkey, "/var/tmp/test_results/current", "./test_results")
         end
     end,
 }
