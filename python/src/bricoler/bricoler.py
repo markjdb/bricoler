@@ -719,6 +719,8 @@ class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
         "ksh93",
         "llvm",
         "ndisc6",
+        "net/py-dpkt",
+        "net/tcptestsuite",
         "nist-kat",
         "nmap",
         "openvpn",
@@ -729,6 +731,7 @@ class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
         "devel/py-pytest",
         "devel/py-twisted",
         "net/scapy",
+        "security/setaudit",
         "sg3_utils",
         "sudo",
     ])
