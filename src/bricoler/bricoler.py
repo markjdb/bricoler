@@ -433,7 +433,7 @@ class FreeBSDVMImageTask(Task):
             pkg_reldir = "root/pkg"
             pkg_dir = stage_dir / pkg_reldir
             pkg_dir.mkdir(parents=True, exist_ok=True)
-            pkg_cmd("update", "-r", "bricoler")
+            pkg_cmd("update")
             pkg_cmd("fetch", "--dependencies", "-o", pkg_dir, "pkg", *self.packages.split())
             pkg_cmd("repo", pkg_dir)
 
