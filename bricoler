@@ -2854,7 +2854,7 @@ Task{"freebsd-src-vm-image",
             default = "accf_data accf_dns accf_http accf_tls blake2 " ..
                       "carp cfiscsi cryptodev ctl dummymbuf dummynet fusefs " ..
                       "if_bridge if_enc if_epair if_ovpn if_stf " ..
-                      "ipdivert ipfw ipfw ipfw_nat ipl ipsec " ..
+                      "ipdivert ipfw ipfw ipfw_nat ipl ipsec ip_mroute ip6_mroute " ..
                       "mac_bsdextended mac_ipacl mac_portacl mqueuefs " ..
                       "pf pflog pflow pfsync sctp snd_dummy tarfs tcpmd5 ",
         },
@@ -3275,7 +3275,8 @@ Task{
         end
         exec("make", "-j", ctx.maxjobs, "-s", "-f", "./Makefile.bsd",
              "CC=cc",
-             "SYSDIR=" .. self.sysdir)
+             "SYSDIR=" .. self.sysdir,
+             "WITH_DEBUG=true")
         -- Here we set WITHOUT_DEBUG_FILES to prevent Makefile.bsd from running
         -- mtree.  It has no other effect for FreeBSD kernel modules.
         exec("make", "-s", "-f", "./Makefile.bsd",
@@ -3307,7 +3308,7 @@ Task{"freebsd-src-vm-image",
             default = "30g"
         },
         packages = {
-            default = "bash devel/py-sysctl fio libunwind pamtester python3 rsync sudo ksh93 xxhash",
+            default = "bash devel/py-sysctl fio jq libunwind pamtester python3 rsync sudo ksh93 xxhash",
         },
         ssh_users = {
             -- It's useful to be able to log in to have a look around.
