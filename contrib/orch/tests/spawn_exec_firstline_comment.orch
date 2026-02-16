@@ -1,4 +1,0 @@
--- We had a bug where the first line was joined to the second
-spawn("cat")
-write "Hello\r"
-match "Hello"

@@ -1,76 +1,49 @@
-This is a utility for running FreeBSD src development workflows.  It is still
-in its infancy and its interfaces will change.
+# bricoler
 
-The basic idea is to simplify common src development tasks by provding a light
-framework to wrap operations like:
-- building a FreeBSD src tree
-- constructing a VM image from the output of a build
-- booting the VM image (using QEMU or bhyve)
+bricoler is a utility for running FreeBSD src development workflows.
+The basic idea is to simplify common src development tasks by provding a framework to wrap operations like:
+- building a FreeBSD src tree,
+- constructing a VM image from the output of a build,
+- booting the VM image (using QEMU or bhyve),
 - running things in the guest once it has booted.
 
-For example, to run the FreeBSD regression test suite against an existing clone
-of the FreeBSD src tree, run:
+-----
+
+## Table of Contents
+
+- [Installation](#installation)
+- [Examples](#examples)
+- [License](#license)
+
+## Installation
+
+Make sure that python 3 and hatch are installed:
 
 ```
-$ bricoler run freebsd-src-regression-suite -p freebsd-src:url=/path/to/clone
+$ pkg install python3 py311-hatch
 ```
 
-Add "--show" to list the available parameters.  Run "bricoler run" without any
-other arguments to list available tasks.
-
-## Compatibility
-
-This project only runs on FreeBSD.  It is written in Lua as part of an experiment
-to try and build up a set of libraries exposing low-level interfaces in FreeBSD,
-starting with system calls and eventually up to higher-level components like
-pf, jails, bhyve, ZFS, etc..  This makes cross-platform support difficult.  If
-it becomes tempting to run bricoler on other platforms, a rewrite in Python or
-similar would likely be necessary.
-
-## Building
-
-It requires Lua 5.4 and cmake.
-
-To build it, run "make" from the root directory.
-
-## FreeBSD regression suite quickstart
-
-On FreeBSD main, run the following:
+Run `hatch build` from the root of the repository.
+Install it locally with:
 
 ```
-$ git clone https://github.com/markjdb/bricoler
-$ cd bricoler && make
+$ pip install dist/bricoler-0.1.0-py3-none-any.whl
 ```
 
-If you run bash, try sourcing `bricoler-completion.bash`.
-It auto-completes parameter names; I find it very very useful.
+This will install it to `~/.local/bin`, so make sure that is in your PATH.
 
-Then cd to the src dir you want to build and run the command below.
-It assumes you are testing `main`, and that QEMU is installed.
+If you use bash and have `bash-completion` installed, this will also install a completion script to `~/.local/share/bash-completion/completions/bricoler`.
+I find this very very useful.
+If you use a different shell, please try adding a completion script for it and submit a PR.
 
-```
-$ cd /usr/src
-$ bricoler run freebsd-src-regression-suite --param freebsd-src:url=$(pwd) --param freebsd-src:branch=main
-```
+## Examples
 
-Add `--show` to the end of that invocation to see all of the possible parameters.
-For example, you can add `--param freebsd-src-build:clean=true` to request a clean build.
-
-Specific tests can be chosen with `freebsd-src-regression-suite:tests`:
-
+Run the FreeBSD regression test suite against an existing clone of the FreeBSD src tree:
 
 ```
-$ bricoler run freebsd-src-regression-suite --param freebsd-src-regression-suite:tests="sys/netpfil/pf sbin/pfctl"
+$ bricoler freebsd-regression-test-suite --freebsd-src-git-checkout/url=/home/markj/sb/main/src --freebsd-src-build/kernel_config=GENERIC-KASAN
 ```
 
-Once the regression suite finishes, you can look at the results with:
+## License
 
-```
-$ bricoler run freebsd-src-regression-suite report
-```
-
-If the guest panics it is possible to attach kgdb and interactively debug with:
-
-```
-$ bricoler run freebsd-src-regression-suite gdb
-```
+`bricoler` is distributed under the terms of the [BSD-2-Clause](https://spdx.org/licenses/BSD-2-Clause.html) license.

@@ -1,6 +1,0 @@
-spawn("cat")
-
--- Making sure the first line doesn't get stripped when we have no shebang on
--- the first line.
-write "Hello\r"
-match "Hello"

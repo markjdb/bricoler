@@ -1,5 +1,0 @@
--- TIMEOUT: 3
-
-match "Nothing" {
-	timeout = 3
-}

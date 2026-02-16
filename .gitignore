@@ -1,6 +1,2 @@
-*.pico
-*.so
-*.so.debug
-*.so.full
-*/__pycache__/*
-contrib/orch/install
+dist/*
+bricoler.json

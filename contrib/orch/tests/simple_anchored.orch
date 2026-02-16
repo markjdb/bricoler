@@ -1,7 +1,0 @@
-
--- Write a simple string and anchor the result.
-write "Hello\r"
-match "^Hello\r\n$"
-
-write "Hello^D"
-match "Hello$"
