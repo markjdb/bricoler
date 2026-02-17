@@ -879,6 +879,46 @@ class FreeBSDDTraceTestSuiteTask(FreeBSDRegressionTestSuiteTask):
     }
 
 
+class CheriBSDSrcGitCheckoutTask(FreeBSDSrcGitCheckoutTask):
+    name = "cheribsd-src-git-checkout"
+
+    url = "https://github.com/CTSRD-CHERI/cheribsd"
+    branch = "dev"
+
+
+class CheriBSDSrcBuildTask(FreeBSDSrcBuildTask):
+    name = "cheribsd-src-build"
+
+    machine = "arm64/aarch64c"
+    toolchain = "llvm-morello"
+    kernel_config = "GENERIC-MORELLO-PURECAP"
+
+    inputs = {
+        'src': CheriBSDSrcGitCheckoutTask,
+    }
+
+
+class CheriBSDSrcBuildAndInstallTask(CheriBSDSrcBuildTask):
+    make_targets = FreeBSDSrcBuildAndInstallTask.make_targets
+
+
+class CheriBSDVMImageTask(FreeBSDVMImageTask):
+    name = "cheribsd-vm-image"
+
+    inputs = {
+        'src': CheriBSDSrcGitCheckoutTask,
+        'build': CheriBSDSrcBuildAndInstallTask,
+    }
+
+
+class CheriBSDVMBootTask(FreeBSDVMBootTask):
+    name = "cheribsd-vm-boot"
+
+    inputs = {
+        'vm_image': CheriBSDVMImageTask,
+    }
+
+
 class EC2Provider:
     config: Config
     ssh_key_dir: Path
