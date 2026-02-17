@@ -384,6 +384,8 @@ class FreeBSDVMImageTask(Task):
 
         add_config_file("boot/loader.conf",
                         "autoboot_delay=1",
+                        "beastie_disable=YES",
+                        "loader_logo=none",
                         "console=comconsole",
                         "kern.geom.label.disk_ident.enable=0",
                         "zfs_load=YES" if self.filesystem == FreeBSDVMImageFilesystem.ZFS else "",
