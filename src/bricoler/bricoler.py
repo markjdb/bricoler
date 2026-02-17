@@ -292,6 +292,11 @@ class FreeBSDVMImageTask(Task):
         'rc_kld_list': TaskParameter(
             description="A list of kernel modules to load at boot time",
         ),
+        'single_user': TaskParameter(
+            description="Boot into single-user mode",
+            type=bool,
+            default=False,
+        ),
         'swap_size': TaskParameter(
             description="Size of the swap partition",
             default="2G",
@@ -388,6 +393,7 @@ class FreeBSDVMImageTask(Task):
                         "beastie_disable=YES",
                         "loader_logo=none",
                         "console=comconsole",
+                        "kernel_options=-s" if self.single_user else "",
                         "kern.geom.label.disk_ident.enable=0",
                         "zfs_load=YES" if self.filesystem == FreeBSDVMImageFilesystem.ZFS else "",
                         *[tunable for tunable in self.loader_tunables.split()])
