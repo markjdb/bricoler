@@ -8,7 +8,7 @@
 usage()
 {
     cat <<__EOF__ >&2
-usage: run-kyua [-c <count>] [-j <parallelism>] [-r <report DB path>]
+usage: run-kyua [-c <count>] [-d <disks>] [-j <parallelism>] [-r <report DB path>]
                 [<test path> [<test path> ...]]
 
 Run the tests under <test path>, relative to /usr/tests, or if no test paths
@@ -20,7 +20,8 @@ test suite.
 Options:
 -c <count>         Run the test suite <count> times, stop if any failures occur
                    default is 1.
--d <disks>         Provide the specified disks as scratch space for tests.
+-d <disks>         Provide the specified space-separated block devices as
+                   scratch space for tests which want them.
 -j <parallelism>   Run up to <parallelism> tests in parallel, default is the
                    number of CPUs in the system.
 -r <report DB path> Store the test results in the specified report DB, default
