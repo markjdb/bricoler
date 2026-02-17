@@ -12,7 +12,6 @@ The basic idea is to simplify common src development tasks by provding a framewo
 ## Table of Contents
 
 - [Installation](#installation)
-- [Examples](#examples)
 - [License](#license)
 
 ## Installation
@@ -31,18 +30,11 @@ $ pip install dist/bricoler-0.1.0-py3-none-any.whl
 ```
 
 This will install it to `~/.local/bin`, so make sure that is in your PATH.
+There is a bricoler man page, so you can run `man bricoler` to get usage information and examples.
 
 If you use bash and have `bash-completion` installed, this will also install a completion script to `~/.local/share/bash-completion/completions/bricoler`.
 I find this very very useful.
 If you use a different shell, please try adding a completion script for it and submit a PR.
-
-## Examples
-
-Run the FreeBSD regression test suite against an existing clone of the FreeBSD src tree:
-
-```
-$ bricoler freebsd-regression-test-suite --freebsd-src-git-checkout/url=/home/markj/sb/main/src --freebsd-src-build/kernel_config=GENERIC-KASAN
-```
 
 ## License
 
