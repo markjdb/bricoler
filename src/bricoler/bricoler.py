@@ -197,6 +197,7 @@ class FreeBSDSrcBuildTask(Task):
                 f"DESTDIR={stagedir}",
                 f"METALOG={metalog}",
                 f"TARGET={machine}",
+                f"TARGET_ARCH={machine_arch}",
                 f"KERNCONF={self.kernel_config}",
             ]
             if self.clean:
