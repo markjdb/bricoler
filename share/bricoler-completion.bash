@@ -39,13 +39,6 @@ _bricoler_completions()
         return 0
     fi
 
-    params=""
-    if [ "$COMP_CWORD" -ge 2 -a "${COMP_WORDS[1]}" = "run" ]; then
-        # Assume that the argument following "run" is the task name.
-        # This doesn't have to be true, maybe we should try harder...
-        params=$(BRICOLER_ARGCOMPLETE=1 "$cmd" -l ${COMP_WORDS[2]} 2>/dev/null)
-    fi
-
     case $prev in
     -w|--workdir)
         COMPREPLY=($(compgen -d -- "$cur"))
