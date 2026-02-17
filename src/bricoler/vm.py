@@ -5,12 +5,11 @@
 #
 
 import os
-import re
 import sys
 from abc import abstractmethod
 from enum import Enum
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from .util import run_cmd, unused_tcp_addr
 
@@ -21,6 +20,14 @@ class VMImage:
     def __init__(self, path: Path, machine: str):
         self.path = path
         self.machine = machine
+
+    def select(self, d: Dict[str, str], default=None) -> str:
+        val = d.get(self.machine)
+        if val is None:
+            val = d.get(self.machine.split('/', maxsplit=1)[0])
+            if val is None:
+                return default
+        return val
 
 
 class VMHypervisor(Enum):
@@ -83,12 +90,11 @@ class BhyveRun(VMRun):
             return "nvme"
 
     def bootrom_path(self) -> Path:
-        bootroms = {
+        return self.image.select({
             'amd64': Path('/usr/local/share/uefi-firmware/BHYVE_UEFI.fd'),
             'arm64': Path('/usr/local/share/u-boot/u-boot-bhyve-arm64/u-boot.bin'),
             'i386': Path('/usr/local/share/uefi-firmware/BHYVE_UEFI_32.fd'),
-        }
-        return bootroms[self.image.machine.split('/', maxsplit=1)[0]]
+        })
 
     def network_driver_name(self) -> str:
         driver = self.nic_driver
@@ -131,23 +137,14 @@ class BhyveRun(VMRun):
 
 
 class QEMURun(VMRun):
-    executables = {
-        'amd64': 'qemu-system-x86_64',
-        'i386': 'qemu-system-i386',
-        'arm': 'qemu-system-arm',
-        'arm64': 'qemu-system-aarch64',
-        'riscv': 'qemu-system-riscv64',
-    }
-
     def bios_path(self) -> Optional[Path]:
-        bioses = {
+        return self.image.select({
             # XXX-MJ add some dict type which automatically checks for the path
             #        and suggests some recourse if it's not available
             'amd64': Path("/usr/local/share/edk2-qemu/QEMU_UEFI-x86_64.fd"),
             'arm64': Path("/usr/local/share/qemu/edk2-aarch64-code.fd"),
             'riscv': Path("/usr/local/share/opensbi/lp64/generic/firmware/fw_jump.elf"),
-        }
-        return bioses.get(self.image.machine.split('/', maxsplit=1)[0], None)
+        })
 
     def kernel_path(self) -> Optional[Path]:
         kernels = {
@@ -176,24 +173,34 @@ class QEMURun(VMRun):
             )
 
     def machine_type(self) -> str:
-        machines = {
+        return self.image.select({
             'amd64': "q35",
             'arm64': "virt,gic-version=3",
-        }
-        return machines.get(self.image.machine.split('/', maxsplit=1)[0], 'virt')
+        }, "virt")
 
     def setup(self) -> List[Any]:
-        qemu_executable = self.executables.get(self.image.machine.split('/')[0])
-        if qemu_executable is None:
+        exe = self.image.select({
+            'amd64': 'qemu-system-x86_64',
+            'i386': 'qemu-system-i386',
+            'arm': 'qemu-system-arm',
+            'arm64': 'qemu-system-aarch64',
+            'arm64/aarch64c': 'qemu-system-morello',
+            'riscv': 'qemu-system-riscv64',
+        })
+        if exe is None:
             raise ValueError(
                 f"qemu does not support machine type '{self.image.machine}'"
             )
 
+        cpu = self.image.select({
+            'arm64/aarch64c': "morello"
+        }, "max")
+
         qemu_cmd = [
-            qemu_executable,
+            exe,
             "-nographic",
             "-no-reboot",
-            "-cpu", "max",
+            "-cpu", cpu,
             "-m", f"{self.memory}M",
             "-smp", self.ncpus,
             "-device", "virtio-rng-pci",
