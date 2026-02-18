@@ -406,7 +406,7 @@ class FreeBSDVMImageTask(Task):
 
         add_config_file("firstboot")
 
-        if self.packages is not None:
+        if self.packages:
             major = self.src.FreeBSD_version // 100000
             pkgabi = f"FreeBSD:{major}:{machine.split('/')[1]}"
 
