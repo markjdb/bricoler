@@ -23,7 +23,7 @@ from .git import GitRepository
 from .mtree import MtreeFile
 from .task import Task, TaskParameter, TaskMeta, TaskSchedule
 from .util import chdir, host_machine, info, run_cmd, warn
-from .vm import FreeBSDVM, VMImage, VMHypervisor, BhyveRun, QEMURun, SSHCommandRunner
+from .vm import FreeBSDVM, VMImage, VMHypervisor, BhyveRun, QEMURun, RVVMRun, SSHCommandRunner
 
 
 class FreeBSDSrcRepository(GitRepository):
@@ -658,7 +658,10 @@ class FreeBSDVMBootTask(Task):
     }
 
     def run(self, ctx):
-        cls = QEMURun if self.hypervisor == VMHypervisor.QEMU else BhyveRun
+        match self.hypervisor:
+            case VMHypervisor.BHYVE: cls = BhyveRun
+            case VMHypervisor.QEMU: cls = QEMURun
+            case VMHypervisor.RVVM: cls = RVVMRun
         if self.p9_shares:
             p9_shares = [tuple(desc.split(':')) for desc in self.p9_shares.split(',')]
         else:

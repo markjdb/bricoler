@@ -65,6 +65,7 @@ class VMImage:
 class VMHypervisor(Enum):
     BHYVE = 'bhyve'
     QEMU = 'qemu'
+    RVVM = 'rvvm'
 
 
 class VMRun:
@@ -219,6 +220,27 @@ class BhyveRun(VMRun):
 
         return [str(a) for a in bhyve_cmd]
 
+
+class RVVMRun(VMRun):
+    def setup(self) -> List[str]:
+        rvvm_cmd = [
+            "rvvm",
+            "/usr/local/share/RVVM/fw_payload.bin",
+            "-image", f"{self.image.path}",
+            "-mem", f"{self.memory}M",
+            "-smp", f"{self.ncpus}",
+            "-nogui",
+        ]
+
+        match self.nic_driver:
+            case VMRun.NetworkDriver.VIRTIO:
+                rvvm_cmd.extend(["-portfwd", f"tcp/{self.ssh_addr[0]}:{self.ssh_addr[1]}=22"])
+            case VMRun.NetworkDriver.NONE:
+                rvvm_cmd.extend(["-nonet"])
+            case _:
+                raise ValueError(f"Unsupported network driver {self.nic_driver} is not supported by RVVM")
+
+        return rvvm_cmd
 
 class QEMURun(VMRun):
     def bios_path(self) -> Optional[Path]:
