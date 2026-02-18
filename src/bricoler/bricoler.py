@@ -213,6 +213,7 @@ class FreeBSDSrcBuildTask(Task):
                 "MAKEOBJDIRPREFIX": objdir,
                 "SRCCONF": "/dev/null",
                 "__MAKE_CONF": "/dev/null",
+                "WITH_META_MODE": "yes",
             }
 
             self.src.repo.make(args, env=env)
