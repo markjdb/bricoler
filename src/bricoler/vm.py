@@ -76,6 +76,7 @@ class VMRun:
     class NetworkDriver(Enum):
         VIRTIO = 1,
         E1000 = 2,
+        NONE = 3,
 
     def __init__(
         self,
@@ -163,11 +164,10 @@ class BhyveRun(VMRun):
         })
 
     def network_driver_name(self) -> str:
-        driver = self.nic_driver
-        if driver == VMRun.NetworkDriver.VIRTIO:
-            return "virtio-net"
-        elif driver == VMRun.NetworkDriver.E1000:
-            return "e1000"
+        match self.nic_driver:
+            case VMRun.NetworkDriver.VIRTIO: return "virtio-net"
+            case VMRun.NetworkDriver.E1000: return "e1000"
+        raise ValueError(f"Unsupported network driver {driver} is not supported by bhyve")
 
     def setup(self) -> List[Any]:
         if BhyveRun.has_monitor_mode():
@@ -210,7 +210,8 @@ class BhyveRun(VMRun):
         add_device(f"{self.block_driver_name()},{self.image.path}")
         for disk in self.extra_disks:
             add_device(f"{self.block_driver_name()},{disk}")
-        add_device(f"{self.network_driver_name()},slirp,open,hostfwd=tcp:{self.ssh_addr[0]}:{self.ssh_addr[1]}-:22")
+        if self.nic_driver != VMRun.NetworkDriver.NONE:
+            add_device(f"{self.network_driver_name()},slirp,open,hostfwd=tcp:{self.ssh_addr[0]}:{self.ssh_addr[1]}-:22")
         for share in self.p9_shares:
             add_device(f"virtio-9p,{share[0]}={share[1]}")
 
@@ -290,8 +291,6 @@ class QEMURun(VMRun):
             "-device", "virtio-rng-pci",
             "-device", f"{self.block_driver_name()},drive=image",
             "-drive", f"file={self.image.path},if=none,id=image,format=raw",
-            "-device", f"{self.nic_driver_name()},netdev=net0",
-            "-netdev", f"user,id=net0,hostfwd=tcp:{self.ssh_addr[0]}:{self.ssh_addr[1]}-:22",
             "-gdb", f"tcp:{self.gdb_addr[0]}:{self.gdb_addr[1]}",
         ]
         for disk in self.extra_disks:
@@ -312,6 +311,11 @@ class QEMURun(VMRun):
         kernel_path = self.kernel_path()
         if kernel_path is not None:
             qemu_cmd.extend(["-kernel", kernel_path])
+        if self.nic_driver != VMRun.NetworkDriver.NONE:
+            qemu_cmd.extend([
+                "-device", f"{self.nic_driver_name()},netdev=net0",
+                "-netdev", f"user,id=net0,hostfwd=tcp:{self.ssh_addr[0]}:{self.ssh_addr[1]}-:22",
+            ])
 
         return [str(a) for a in qemu_cmd]
 
