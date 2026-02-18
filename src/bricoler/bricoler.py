@@ -22,7 +22,7 @@ from .git import GitRepository
 from .mtree import MtreeFile
 from .task import Task, TaskParameter, TaskMeta, TaskSchedule
 from .util import chdir, host_machine, info, run_cmd, warn
-from .vm import FreeBSDVM, VMImage, VMHypervisor, BhyveRun, QEMURun
+from .vm import FreeBSDVM, VMImage, VMHypervisor, BhyveRun, QEMURun, RVVMRun
 
 
 class FreeBSDSrcRepository(GitRepository):
@@ -623,7 +623,13 @@ class FreeBSDVMBootTask(Task):
     }
 
     def run(self, ctx):
-        cls = QEMURun if self.hypervisor == VMHypervisor.QEMU else BhyveRun
+        match self.hypervisor:
+            case VMHypervisor.QEMU:
+                cls = QEMURun
+            case VMHypervisor.RVVM:
+                cls = RVVMRun
+            case _:
+                cls = BhyveRun
         vmrun = cls(
             image=self.vm_image.image,
             memory=self.memory,
