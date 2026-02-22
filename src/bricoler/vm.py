@@ -4,8 +4,10 @@
 # SPDX-License-Identifier: BSD-2-Clause
 #
 
+import functools
 import os
 import sys
+import uuid
 from abc import abstractmethod
 from enum import Enum
 from pathlib import Path
@@ -69,9 +71,34 @@ class VMRun:
 
 
 class BhyveRun(VMRun):
+    class PrivModel(Enum):
+        INVALID = 1,  # Cannot run bhyve.
+        UNPRIV = 2,   # Can run bhyve with current privileges.
+        MDO = 3,      # Can run bhyve with mdo(1).
+        SUDO = 4,     # Can run bhyve with sudo.
+
+    @functools.cache
     @staticmethod
-    def access() -> bool:
-        return os.access("/dev/vmmctl", os.R_OK | os.W_OK)
+    def access():
+        if os.access("/dev/vmmctl", os.R_OK | os.W_OK):
+            return BhyveRun.PrivModel.UNPRIV
+        if run_cmd(["mdo", "test" "-w", "/dev/vmmctl"], check_result=False).returncode == 0:
+            return BhyveRun.PrivModel.MDO
+        if run_cmd(["sudo", "-ln", "bhyve"], check_result=False).returncode == 0 and \
+           run_cmd(["sudo", "-ln", "bhyvectl"], check_result=False).returncode == 0:
+            return BhyveRun.PrivModel.SUDO
+        return BhyveRun.PrivModel.INVALID
+
+    @staticmethod
+    @functools.cache
+    def canrun() -> bool:
+        return BhyveRun.access() != BhyveRun.PrivModel.INVALID
+
+    @staticmethod
+    @functools.cache
+    def has_monitor_mode() -> bool:
+        usage = run_cmd(["bhyve", "--help"], capture_output=True, check_result=False, text=True)
+        return "-M: monitor mode" in usage.stderr
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -104,12 +131,21 @@ class BhyveRun(VMRun):
             return "e1000"
 
     def setup(self) -> List[Any]:
-        destroy_cmd = ["mdo", "bhyvectl", "--vm=bricoler", "--destroy"]
-        run_cmd(destroy_cmd, check_result=False)
+        if BhyveRun.has_monitor_mode():
+            vmname = f"bricoler-{uuid.uuid4()}"
+        else:
+            destroy_cmd = ["bhyvectl", f"--vm={vmname}", "--destroy"]
+            run_cmd(destroy_cmd, check_result=False)
 
-        bhyve_cmd = ["mdo", "bhyve", "-c", self.ncpus, "-m", f"{self.memory}M"]
+        if BhyveRun.access() == BhyveRun.PrivModel.MDO:
+            bhyve_cmd = ["mdo", "bhyve"]
+        elif BhyveRun.access() == BhyveRun.PrivModel.SUDO:
+            bhyve_cmd = ["sudo", "bhyve"]
+        else:
+            bhyve_cmd = ["bhyve"]
+        bhyve_cmd.extend(["-c", self.ncpus, "-m", f"{self.memory}M"])
+
         devindex = 0
-
         def add_device(desc):
             nonlocal devindex
             bhyve_cmd.extend(["-s", f"{devindex}:0,{desc}"])
@@ -121,7 +157,9 @@ class BhyveRun(VMRun):
             bhyve_cmd.extend([
                 "-H",
                 "-l", "com1,stdio",
-                "-l", f"bootrom,{bootrom}"
+                "-l", f"bootrom,{bootrom}",
+                "-G", f"{self.gdb_addr[0]}:{self.gdb_addr[1]}",
+                "-M",
             ])
             add_device("lpc")
         else:
@@ -130,8 +168,9 @@ class BhyveRun(VMRun):
                 "-o", f"bootrom,{bootrom}"
             ])
         add_device(f"{self.block_driver_name()},{self.image.path}")
+        add_device(f"{self.network_driver_name()},slirp,hostfwd=tcp:{self.ssh_addr[0]}:{self.ssh_addr[1]}-:22")
 
-        bhyve_cmd.extend(["bricoler"])
+        bhyve_cmd.extend([vmname])
 
         return [str(a) for a in bhyve_cmd]
 

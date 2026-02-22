@@ -122,8 +122,30 @@ Parameters may still be specified when invoking an alias, and command-line
 parameter values override those stored in the alias.
 Aliases are stored in the working directory.
 .Pp
+.Sh PRIVILEGES
+.Nm
+generally aims to be run as a non-root user, though this is not required.
+.Pp
+Many
+.Nm
+tasks involve running a local virtual machine; currently QEMU and bhyve are
+supported for this purpose, and the hypervisor can be selected with a parameter,
+e.g., via the
+.Fl -freebsd-vm-boot/hypervisor
+parameter.
+bhyve traditionally requires root privileges, but if the user is in the
+.Dq vmm
+group, or if the system is configured to allow privilege elevation via
+.Xr mdo 1
+or
+.Xr sudo 8
+without prompting for a password, then
+.Nm
+will automatically detect this and try to use bhyve by default.
+Note that QEMU must be used when running a non-native architecture, e.g.,
+running an arm64 VM on a amd64 host.
 .Sh ENVIRONMENT
-.Bl -tag -offset indent
+.Bl -tag
 .It Ev BRICOLER_WORKDIR
 Sets the root of the working directory tree.
 .El
