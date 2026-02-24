@@ -168,7 +168,7 @@ class BhyveRun(VMRun):
                 "-o", f"bootrom,{bootrom}"
             ])
         add_device(f"{self.block_driver_name()},{self.image.path}")
-        add_device(f"{self.network_driver_name()},slirp,hostfwd=tcp:{self.ssh_addr[0]}:{self.ssh_addr[1]}-:22")
+        add_device(f"{self.network_driver_name()},slirp,open,hostfwd=tcp:{self.ssh_addr[0]}:{self.ssh_addr[1]}-:22")
 
         bhyve_cmd.extend([vmname])
 
