@@ -593,7 +593,8 @@ class FreeBSDVMBootTask(Task):
         'hypervisor': TaskParameter(
             description="Hypervisor to use for running the VM",
             type=VMHypervisor,
-            default=lambda: VMHypervisor.BHYVE if BhyveRun.access() else VMHypervisor.QEMU,
+            # XXX-MJ should somehow default to qemu for non-native images
+            default=lambda: VMHypervisor.BHYVE if BhyveRun.canrun() else VMHypervisor.QEMU,
         ),
         'interactive': TaskParameter(
             description="Run the VM in interactive mode",
