@@ -22,7 +22,7 @@ from .git import GitRepository
 from .mtree import MtreeFile
 from .task import Task, TaskParameter, TaskMeta, TaskSchedule
 from .util import chdir, host_machine, info, run_cmd, warn
-from .vm import FreeBSDVM, VMImage, VMHypervisor, BhyveRun, QEMURun
+from .vm import FreeBSDVM, VMImage, VMHypervisor, BhyveRun, QEMURun, RVVMRun
 
 
 class FreeBSDSrcRepository(GitRepository):
@@ -213,6 +213,7 @@ class FreeBSDSrcBuildTask(Task):
                 "MAKEOBJDIRPREFIX": objdir,
                 "SRCCONF": "/dev/null",
                 "__MAKE_CONF": "/dev/null",
+                "WITH_META_MODE": "yes",
             }
 
             self.src.repo.make(args, env=env)
@@ -405,7 +406,7 @@ class FreeBSDVMImageTask(Task):
 
         add_config_file("firstboot")
 
-        if self.packages is not None:
+        if self.packages:
             major = self.src.FreeBSD_version // 100000
             pkgabi = f"FreeBSD:{major}:{machine.split('/')[1]}"
 
@@ -623,7 +624,13 @@ class FreeBSDVMBootTask(Task):
     }
 
     def run(self, ctx):
-        cls = QEMURun if self.hypervisor == VMHypervisor.QEMU else BhyveRun
+        match self.hypervisor:
+            case VMHypervisor.QEMU:
+                cls = QEMURun
+            case VMHypervisor.RVVM:
+                cls = RVVMRun
+            case _:
+                cls = BhyveRun
         vmrun = cls(
             image=self.vm_image.image,
             memory=self.memory,

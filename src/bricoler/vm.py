@@ -35,6 +35,7 @@ class VMImage:
 class VMHypervisor(Enum):
     BHYVE = 'bhyve'
     QEMU = 'qemu'
+    RVVM = 'rvvm'
 
 
 class VMRun:
@@ -174,6 +175,20 @@ class BhyveRun(VMRun):
 
         return [str(a) for a in bhyve_cmd]
 
+
+class RVVMRun(VMRun):
+    def setup(self) -> List[str]:
+        rvvm_cmd = [
+            "rvvm",
+            "/usr/local/share/RVVM/fw_payload.bin",
+            "-image", f"{self.image.path}",
+            "-mem", f"{self.memory}M",
+            "-smp", f"{self.ncpus}",
+            "-nogui",
+        ]
+        if self.nic_driver != VMRun.NetworkDriver.VIRTIO:
+            rvvm_cmd.extend(["-nonet"])
+        return rvvm_cmd
 
 class QEMURun(VMRun):
     def bios_path(self) -> Optional[Path]:
