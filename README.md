@@ -36,6 +36,21 @@ If you use bash and have `bash-completion` installed, this will also install a c
 I find this very very useful.
 If you use a different shell, please try adding a completion script for it and submit a PR.
 
+## Usage
+
+Example:
+```
+bricoler freebsd-regression-test-suite \
+    --freebsd-regression-test-suite/hypervisor=bhyve \
+    --freebsd-regression-test-suite/memory=8192 \
+    --freebsd-regression-test-suite/ncpus=8 \
+    --freebsd-regression-test-suite/tests="sys/netpfil/pf sbin/pfctl" \
+    --freebsd-src-git-checkout/url=/usr/src \
+    --freebsd-src-build/kernel_config=GENERIC-KASAN
+```
+
+More extensive usage information can be found in the man page `man share/bricoler.1`.
+
 ## License
 
 `bricoler` is distributed under the terms of the [BSD-2-Clause](https://spdx.org/licenses/BSD-2-Clause.html) license.
