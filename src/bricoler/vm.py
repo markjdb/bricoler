@@ -225,6 +225,7 @@ class QEMURun(VMRun):
             # XXX-MJ add some dict type which automatically checks for the path
             #        and suggests some recourse if it's not available
             'amd64': Path("/usr/local/share/edk2-qemu/QEMU_UEFI-x86_64.fd"),
+            'arm': Path("/usr/local/share/u-boot/u-boot-qemu-arm/u-boot.bin"),
             'arm64': Path("/usr/local/share/qemu/edk2-aarch64-code.fd"),
             'riscv': Path("/usr/local/share/opensbi/lp64/generic/firmware/fw_jump.elf"),
         })
