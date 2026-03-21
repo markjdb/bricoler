@@ -54,12 +54,14 @@ class VMRun:
         ncpus: int = 2,
         block_driver: BlockDriver = BlockDriver.VIRTIO,
         nic_driver: NetworkDriver = NetworkDriver.VIRTIO,
+        p9_shares: List[Tuple[str, Path]] = [],
     ):
         self.image = image
         self.memory = memory
         self.ncpus = ncpus
         self.block_driver = block_driver
         self.nic_driver = nic_driver
+        self.p9_shares = p9_shares
         self.gdb_addr = unused_tcp_addr()
         self.ssh_addr = unused_tcp_addr()
 
@@ -146,6 +148,7 @@ class BhyveRun(VMRun):
         bhyve_cmd.extend(["-c", self.ncpus, "-m", f"{self.memory}M"])
 
         devindex = 0
+
         def add_device(desc):
             nonlocal devindex
             bhyve_cmd.extend(["-s", f"{devindex}:0,{desc}"])
@@ -169,6 +172,8 @@ class BhyveRun(VMRun):
             ])
         add_device(f"{self.block_driver_name()},{self.image.path}")
         add_device(f"{self.network_driver_name()},slirp,open,hostfwd=tcp:{self.ssh_addr[0]}:{self.ssh_addr[1]}-:22")
+        for share in self.p9_shares:
+            add_device(f"virtio-9p,{share[0]}={share[1]}")
 
         bhyve_cmd.extend([vmname])
 
@@ -249,6 +254,10 @@ class QEMURun(VMRun):
             "-netdev", f"user,id=net0,hostfwd=tcp:{self.ssh_addr[0]}:{self.ssh_addr[1]}-:22",
             "-gdb", f"tcp:{self.gdb_addr[0]}:{self.gdb_addr[1]}",
         ]
+        for share in self.p9_shares:
+            qemu_cmd.extend([
+                "-virtfs", f"local,path={share[1]},mount_tag={share[0]},security_model=none",
+            ])
         machine_type = self.machine_type()
         if machine_type is not None:
             qemu_cmd.extend(["-M", machine_type])

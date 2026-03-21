@@ -395,6 +395,8 @@ class FreeBSDVMImageTask(Task):
                         "console=comconsole",
                         "kernel_options=-s" if self.single_user else "",
                         "kern.geom.label.disk_ident.enable=0",
+                        "p9fs_load=YES",
+                        "virtio_p9fs_load=YES",
                         "zfs_load=YES" if self.filesystem == FreeBSDVMImageFilesystem.ZFS else "",
                         *[tunable for tunable in self.loader_tunables.split()])
 
@@ -611,6 +613,10 @@ class FreeBSDVMBootTask(Task):
             type=int,
             default=2,
         ),
+        'p9_shares': TaskParameter(
+            description="Comma-separated list of shares of the form <share>:<path>",
+            type=str,  # XXX-MJ List[Tuple[str, Path]]
+        ),
         'reboot': TaskParameter(
             description="Restart the VM when it exits due to a reboot",
             type=bool,
@@ -624,10 +630,12 @@ class FreeBSDVMBootTask(Task):
 
     def run(self, ctx):
         cls = QEMURun if self.hypervisor == VMHypervisor.QEMU else BhyveRun
+        p9_shares = [tuple(desc.split(':')) for desc in self.p9_shares.split(',')]
         vmrun = cls(
             image=self.vm_image.image,
             memory=self.memory,
             ncpus=self.ncpus,
+            p9_shares=p9_shares,
         )
 
         # Save ssh and gdb addresses for later use.
