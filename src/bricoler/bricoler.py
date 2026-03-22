@@ -5,6 +5,7 @@
 #
 
 import functools
+import glob
 import json
 import os
 import re
@@ -407,7 +408,7 @@ class FreeBSDVMImageTask(Task):
 
         add_config_file("firstboot")
 
-        if self.packages is not None:
+        if self.packages is not None and len(self.packages) > 0:
             major = self.src.FreeBSD_version // 100000
             pkgabi = f"FreeBSD:{major}:{machine.split('/')[1]}"
 
@@ -446,10 +447,23 @@ class FreeBSDVMImageTask(Task):
             pkg_dir.mkdir(parents=True, exist_ok=True)
             pkg_cmd("update")
             pkg_cmd("fetch", "--dependencies", "-o", pkg_dir, "pkg", *self.packages.split())
+            pkg_cmd("-o", f"PKG_CACHEDIR={pkg_dir}", "clean")
             pkg_cmd("repo", pkg_dir)
 
             pkg_version = pkg_cmd("rquery", "%v", "pkg", capture_output=True).stdout
             pkg_version = pkg_version.decode().strip()
+            pkg_pkg = "pkg-" + pkg_version + ".pkg"
+
+            # We might have fetched a hashed package.  Make a symlink so the script
+            # can find it during boot.  pkg-fetch sports a --symlink option that's
+            # supposed to do it, but it creates broken symlinks at the moment. See
+            # https://github.com/freebsd/pkg/pull/2587
+            if not Path(pkg_dir / "All" / pkg_pkg).is_file():
+                matches = glob.glob(str(pkg_dir / "All/Hashed" / f"pkg-{pkg_version}*.pkg"))
+                if len(matches) > 0:
+                    (pkg_dir / "All" / pkg_pkg).symlink_to(Path("Hashed") / Path(matches[0]).name)
+                else:
+                    raise ValueError(f"Could not find fetched {pkg_pkg} in {pkg_dir / 'All'}")
 
             add_overlay(stage_dir)
 
@@ -471,7 +485,7 @@ class FreeBSDVMImageTask(Task):
                                 # Older version of pkg(7) don't use basename().
                                 cd /{pkg_reldir}/All
                                 # Install pkg(8).
-                                IGNORE_OSVERSION=yes pkg add -r local pkg-{pkg_version}*
+                                IGNORE_OSVERSION=yes pkg add -r local {pkg_pkg}
                                 # Install the requested packages.
                                 IGNORE_OSVERSION=yes pkg install -y -r local {self.packages}
                             }}
