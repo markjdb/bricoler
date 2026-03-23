@@ -644,7 +644,10 @@ class FreeBSDVMBootTask(Task):
 
     def run(self, ctx):
         cls = QEMURun if self.hypervisor == VMHypervisor.QEMU else BhyveRun
-        p9_shares = [tuple(desc.split(':')) for desc in self.p9_shares.split(',')]
+        if self.p9_shares:
+            p9_shares = [tuple(desc.split(':')) for desc in self.p9_shares.split(',')]
+        else:
+            p9_shares = []
         vmrun = cls(
             image=self.vm_image.image,
             memory=self.memory,
