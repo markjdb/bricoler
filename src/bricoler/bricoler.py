@@ -23,7 +23,7 @@ from .git import GitRepository
 from .mtree import MtreeFile
 from .task import Task, TaskParameter, TaskMeta, TaskSchedule
 from .util import chdir, host_machine, info, run_cmd, warn
-from .vm import FreeBSDVM, VMImage, VMHypervisor, BhyveRun, QEMURun
+from .vm import FreeBSDVM, VMImage, VMHypervisor, BhyveRun, QEMURun, SSHCommandRunner
 
 
 class FreeBSDSrcRepository(GitRepository):
@@ -650,6 +650,7 @@ class FreeBSDVMBootTask(Task):
             memory=self.memory,
             ncpus=self.ncpus,
             p9_shares=p9_shares,
+            ssh_key=self.vm_image.ssh_key,
         )
 
         # Save ssh and gdb addresses for later use.
@@ -666,12 +667,11 @@ class FreeBSDVMBootTask(Task):
         sysroot.unlink(missing_ok=True)
         sysroot.symlink_to(self.vm_image.sysroot)
 
-        cmd = vmrun.setup()
         if self.interactive:
-            self.run_cmd(cmd)
+            self.run_cmd(vmrun.setup())
             vm = None
         else:
-            vm = FreeBSDVM(cmd)
+            vm = FreeBSDVM(vmrun)
 
         return {'vm': vm}
 
@@ -696,16 +696,8 @@ class FreeBSDVMBootTask(Task):
         with open(Path.cwd() / "ssh-addr", "r") as f:
             addr = f.read().strip()
         (host, portstr) = addr.split(':', maxsplit=1)
-        port = int(portstr)
-        ssh_cmd = [
-            "ssh",
-            "-o", "UserKnownHostsFile=/dev/null",
-            "-o", "StrictHostKeyChecking=no",
-            "-p", port,
-            "-i", Path.cwd() / "ssh_key",
-            "root@" + host,
-        ]
-        self.run_cmd(ssh_cmd)
+        ssh = SSHCommandRunner((host, portstr), Path.cwd() / "ssh_key")
+        ssh.run_cmd()
 
     actions = {
         'gdb': _gdb,
@@ -857,14 +849,26 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
                 "-c", str(self.count),
                 "-j", str(self.parallelism),
                 "-r", "/root/kyua.db",
+                "-o", "/root/kyua-report.txt",
                 self.tests
             ]
             vm.sendline(" ".join(cmd))
             vm.wait_for_prompt(timeout=10*3600)
+
+            ssh = SSHCommandRunner(vm.vmrun.ssh_addr, vm.vmrun.ssh_key)
+            ssh.scp_from("/root/kyua.db", Path.cwd() / "kyua.db")
+            ssh.scp_from("/root/kyua-report.txt", Path.cwd() / "kyua-report.txt")
         except FreeBSDVM.PanicException as e:
             # XXX-MJ should optionally attach gdb to the guest here
             raise e
         return outputs
+
+    def _report(self, *args):
+        self.run_cmd(["less", Path.cwd() / "kyua-report.txt"])
+
+    actions = {
+        'report': _report,
+    }
 
 
 class FreeBSDDTraceTestSuiteBuildTask(FreeBSDRegressionTestSuiteBuildTask):

@@ -11,11 +11,41 @@ import uuid
 from abc import abstractmethod
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from .util import run_cmd, unused_tcp_addr
 
 import pexpect
+
+
+class SSHCommandRunner:
+    def __init__(self, addr: Tuple[str, Union[str, int]], key: Path):
+        self.addr = addr[0]
+        self.port = addr[1]
+        self.key = key
+
+    def run_cmd(self, cmd: List[str] = []):
+        ssh_cmd = [
+            "ssh",
+            "-o", "UserKnownHostsFile=/dev/null",
+            "-o", "StrictHostKeyChecking=no",
+            "-p", str(self.port),
+            "-i", str(self.key),
+            f"root@{self.addr}",
+        ] + cmd
+        run_cmd(ssh_cmd, check_result=True)
+
+    def scp_from(self, src: Path, dst: Path):
+        scp_cmd = [
+            "scp",
+            "-o", "UserKnownHostsFile=/dev/null",
+            "-o", "StrictHostKeyChecking=no",
+            "-P", str(self.port),
+            "-i", str(self.key),
+            f"root@{self.addr}:{src}",
+            str(dst),
+        ]
+        run_cmd(scp_cmd, check_result=True)
 
 
 class VMImage:
@@ -55,6 +85,7 @@ class VMRun:
         block_driver: BlockDriver = BlockDriver.VIRTIO,
         nic_driver: NetworkDriver = NetworkDriver.VIRTIO,
         p9_shares: List[Tuple[str, Path]] = [],
+        ssh_key: Optional[Path] = None,
     ):
         self.image = image
         self.memory = memory
@@ -62,6 +93,7 @@ class VMRun:
         self.block_driver = block_driver
         self.nic_driver = nic_driver
         self.p9_shares = p9_shares
+        self.ssh_key = ssh_key
         self.gdb_addr = unused_tcp_addr()
         self.ssh_addr = unused_tcp_addr()
 
@@ -70,6 +102,9 @@ class VMRun:
 
     @abstractmethod
     def ssh_addr(self) -> Tuple[str, int]: ...
+
+    def ssh_handle(self):
+        return SSHCommandRunner(self.ssh_addr, self.ssh_key)
 
 
 class BhyveRun(VMRun):
@@ -285,8 +320,9 @@ class FreeBSDVM:
             self.backtrace = backtrace
             super().__init__(f"{message}: {panicstr}")
 
-    def __init__(self, cmd: List[Any], logfile=sys.stdout.buffer):
-        self.cmd = cmd
+    def __init__(self, vmrun: VMRun, logfile=sys.stdout.buffer):
+        self.vmrun = vmrun
+        self.cmd = vmrun.setup()
         self.logfile = logfile
 
     def expect(self, prompt: str, **kwargs) -> int:

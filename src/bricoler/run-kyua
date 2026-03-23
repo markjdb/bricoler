@@ -24,6 +24,8 @@ Options:
                    scratch space for tests which want them.
 -j <parallelism>   Run up to <parallelism> tests in parallel, default is the
                    number of CPUs in the system.
+-o <report path>   Write a textual report to the specified file, default is
+                   ./kyua-report.txt.
 -r <report DB path> Store the test results in the specified report DB, default
                    is ./kyua.db.
 __EOF__
