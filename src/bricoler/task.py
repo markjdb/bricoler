@@ -306,7 +306,7 @@ class Task(ABC, metaclass=TaskMeta):
 
     def _run_action(self, action_name: str, action_args: List[str]) -> Any:
         with chdir(Path.cwd() / self.name):
-            self.actions[action_name](self, action_args)
+            self._chained_actions[action_name](self, action_args)
 
     def run_cmd(self, cmd: List[Any], *args, **kwargs) -> subprocess.CompletedProcess:
         # Ignore self.skip if the caller needs command output.
@@ -417,8 +417,8 @@ class TaskSchedule:
 
     def run_action(self, action_name: str, action_args: List[str]):
         task = self.schedule.task
-        if action_name not in task.actions:
-            available = ', '.join(task.actions.keys())
+        if action_name not in task._chained_actions:
+            available = ', '.join(task._chained_actions.keys())
             raise ValueError(
                 f"'{task.name}' has no action '{action_name}', available actions are: {available}"
             )
