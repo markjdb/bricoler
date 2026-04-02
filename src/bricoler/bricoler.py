@@ -151,6 +151,7 @@ class FreeBSDSrcBuildTask(Task):
     outputs = {
         'machine': str,
         'metalog': MtreeFile,
+        'repo': FreeBSDSrcRepository,
         'stagedir': Path,
     }
 
@@ -223,6 +224,7 @@ class FreeBSDSrcBuildTask(Task):
         return {
             'machine': f"{machine}/{machine_arch}",
             'metalog': mtree,
+            'repo': self.src.repo,
             'stagedir': stagedir,
         }
 
@@ -297,6 +299,10 @@ class FreeBSDVMImageTask(Task):
             description="Boot into single-user mode",
             type=bool,
             default=False,
+        ),
+        'sudo_users': TaskParameter(
+            description="A list of users to grant sudo privileges, useful for tests",
+            type=str,
         ),
         'swap_size': TaskParameter(
             description="Size of the swap partition",
@@ -405,6 +411,11 @@ class FreeBSDVMImageTask(Task):
             add_config_file("etc/sysctl.conf",
                             *[sysctl for sysctl in self.sysctls.split()],
                             source=(stagedir / "etc/sysctl.conf"))
+
+        if self.sudo_users is not None:
+            for user in self.sudo_users.split():
+                add_config_file(f"usr/local/etc/sudoers.d/{user}",
+                                f"{user} ALL=(ALL) NOPASSWD: ALL")
 
         add_config_file("firstboot")
 
@@ -606,6 +617,10 @@ class FreeBSDVMBootTask(Task):
     }
 
     parameters = {
+        'disk_list': TaskParameter(
+            description="A list of extra files to add as disks",
+            type=str
+        ),
         'hypervisor': TaskParameter(
             description="Hypervisor to use for running the VM",
             type=VMHypervisor,
@@ -650,6 +665,7 @@ class FreeBSDVMBootTask(Task):
             p9_shares = []
         vmrun = cls(
             image=self.vm_image.image,
+            extra_disks=self.disk_list.split() if self.disk_list else [],
             memory=self.memory,
             ncpus=self.ncpus,
             p9_shares=p9_shares,
@@ -1210,6 +1226,216 @@ class EC2ListInstanceTypesTask(EC2MetaTask):
                 continue
             json.dump(it, sys.stdout, indent=2)
         return {}
+
+
+class OpenZFSGitCheckoutTask(GitCheckoutTask):
+    """
+    Clone the OpenZFS repository, or update an existing clone.
+    """
+    name = "openzfs-git-checkout"
+
+    url = "https://github.com/openzfs/zfs"
+    branch = "master"
+
+    outputs = {
+        'repo': GitRepository,
+    }
+
+
+class OpenZFSBuildTask(Task):
+    """
+    Build OpenZFS from a Git repository checkout.
+    """
+    name = "openzfs-build"
+
+    parameters = {
+        'clean': TaskParameter(
+            description="Clean build artifacts before building",
+            type=bool,
+            default=False
+        ),
+        'sysdir': TaskParameter(
+            description="Path to the FreeBSD kernel source to compile against",
+            type=Path,
+            default=Path("/usr/src/sys")
+        ),
+    }
+
+    inputs = {
+        'src': OpenZFSGitCheckoutTask,
+    }
+
+    outputs = {
+        'user_stagedir': Path,
+        'kmod_stagedir': Path,
+    }
+
+    def run(self, ctx):
+        user_stagedir = Path("./install-user").resolve()
+        user_stagedir.mkdir(parents=True, exist_ok=True)
+        kmod_stagedir = Path("./install-kmod").resolve()
+        kmod_stagedir.mkdir(parents=True, exist_ok=True)
+
+        # Build and stage userspace components first.
+        with chdir(self.src.repo.path):
+            if not Path("./configure").is_file() or self.clean:
+                self.run_cmd(["./autogen.sh"])
+            if not Path("./Makefile").is_file() or self.clean:
+                self.run_cmd([
+                    "./configure",
+                    "MAKE=gmake",
+                    "--with-config=user",
+                    "--enable-invariants",
+                    "--enable-debug",
+                ])
+            self.run_cmd(["gmake", "-j", str(ctx.max_jobs)])
+            self.run_cmd(["gmake", "install", f"DESTDIR={user_stagedir}"])
+
+        # Now build the kernel module.
+        with chdir(self.src.repo.path / "module"):
+            if self.clean:
+                self.run_cmd(["make", "-f", "Makefile.bsd", "clean"])
+            self.run_cmd([
+                "make", "-s",
+                "-j", str(ctx.max_jobs),
+                "-f", "Makefile.bsd",
+                "CC=cc",
+                f"SYSDIR={self.sysdir}",
+                "WITH_DEBUG=true"
+            ])
+            self.run_cmd([
+                "make", "-s",
+                "-f", "Makefile.bsd",
+                "install",
+                f"KMODOWN={os.geteuid()}",
+                f"KMODGRP={os.getegid()}",
+                "KMODDIR=",
+                "DEBUGDIR=",
+                f"DESTDIR={kmod_stagedir}",
+                "WITHOUT_DEBUG_FILES=",
+            ])
+
+        return {
+            'user_stagedir': user_stagedir,
+            'kmod_stagedir': kmod_stagedir,
+        }
+
+
+class OpenZFSTestSuiteFreeBSDSrcBuildTask(FreeBSDSrcBuildAndInstallTask):
+    make_options = " ".join([
+        "WITHOUT_LIB32=",
+        "WITHOUT_TOOLCHAIN=",
+        "WITHOUT_ZFS=",
+    ])
+
+
+class OpenZFSTestSuiteOpenZFSBuildTask(OpenZFSBuildTask):
+    inputs = {
+        'freebsd_build': OpenZFSTestSuiteFreeBSDSrcBuildTask,
+    }
+
+    outputs = OpenZFSBuildTask.outputs | OpenZFSTestSuiteFreeBSDSrcBuildTask.outputs
+
+    def run(self, ctx):
+        # XXX-MJ also needs to ensure that userspace is built against a sysroot
+        # instead of the host.
+        self.sysdir = self.freebsd_build.repo.path / "sys"
+        return super().run(ctx) | self.freebsd_build.__dict__
+
+
+class OpenZFSTestSuiteVMImageTask(FreeBSDVMImageTask):
+    filesystem = FreeBSDVMImageFilesystem.UFS
+
+    image_size = 30
+
+    packages = " ".join([
+        "bash",
+        "devel/py-sysctl",
+        "fio",
+        "jq",
+        "ksh93",
+        "libunwind",
+        "pamtester",
+        "python3",
+        "rsync",
+        "sudo",
+        "xxhash",
+    ])
+
+    sudo_users = "tests"
+
+    inputs = {
+        'build': OpenZFSTestSuiteOpenZFSBuildTask,
+    }
+
+    def run(self, ctx):
+        mtree = self.build.metalog
+
+        kmoddir = self.build.kmod_stagedir
+        mtree.add_file(kmoddir / "openzfs.ko",
+                       Path("boot/kernel/openzfs.ko"))
+        mtree.add_file(kmoddir / "openzfs.ko.debug",
+                       Path("usr/lib/debug/boot/kernel/openzfs.ko"))
+
+        def add_overlay(root: Path) -> None:
+            if not root.is_dir():
+                raise ValueError(f"Overlay path '{root}' is not a directory")
+            for item in root.rglob('*'):
+                rel = item.relative_to(root)
+                if item.is_dir():
+                    mtree.add_dir(rel)
+                elif item.is_file():
+                    mtree.add_file(item, rel)
+                elif item.is_symlink():
+                    mtree.add_symlink(src_symlink=item, path_in_image=rel)
+                else:
+                    raise ValueError(
+                        f"Unsupported file type for overlay: {item}"
+                    )
+
+        add_overlay(self.build.user_stagedir)
+
+        return super().run(ctx)
+
+
+class OpenZFSTestSuiteTask(FreeBSDVMBootTask):
+    """
+    Boot a virtual machine and run the OpenZFS test suite (ZTS).
+    """
+    name = "openzfs-test-suite"
+
+    interactive = False
+    ncpus = os.cpu_count() // 2
+    memory = 1024 * (os.cpu_count() // 2)
+
+    inputs = {
+        'vm_image': OpenZFSTestSuiteVMImageTask,
+    }
+
+    def run(self, ctx):
+        disk_list = ""
+        for disk in range(3):
+            with open(f"disk{disk}", "wb") as f:
+                f.truncate(50 * 1024 * 1024 * 1024)
+            disk_list += f" disk{disk}"
+        self.disk_list = disk_list
+
+        outputs = super().run(ctx)
+        vm: FreeBSDVM = outputs['vm']
+        if vm is None:
+            raise ValueError(
+                "Cannot run tests, VM must be run in non-interactive mode"
+            )
+
+        try:
+            vm.boot_to_login()
+            cmd = "/usr/local/share/zfs/zfs-tests.sh -v"
+            vm.sendline(f"DISKS=\"vtbd1 vtbd2 vtbd3\" su -m tests -c \"{cmd}\"")
+            vm.wait_for_prompt(timeout=10*3600)
+        except FreeBSDVM.PanicException as e:
+            # XXX-MJ should optionally attach gdb to the guest here
+            raise e
+        return outputs
 
 
 #

@@ -80,6 +80,7 @@ class VMRun:
     def __init__(
         self,
         image: VMImage,
+        extra_disks: List[str] = [],
         memory: int = 2048,
         ncpus: int = 2,
         block_driver: BlockDriver = BlockDriver.VIRTIO,
@@ -88,6 +89,7 @@ class VMRun:
         ssh_key: Optional[Path] = None,
     ):
         self.image = image
+        self.extra_disks = extra_disks
         self.memory = memory
         self.ncpus = ncpus
         self.block_driver = block_driver
@@ -206,6 +208,8 @@ class BhyveRun(VMRun):
                 "-o", f"bootrom,{bootrom}"
             ])
         add_device(f"{self.block_driver_name()},{self.image.path}")
+        for disk in self.extra_disks:
+            add_device(f"{self.block_driver_name()},{disk}")
         add_device(f"{self.network_driver_name()},slirp,open,hostfwd=tcp:{self.ssh_addr[0]}:{self.ssh_addr[1]}-:22")
         for share in self.p9_shares:
             add_device(f"virtio-9p,{share[0]}={share[1]}")
@@ -289,6 +293,11 @@ class QEMURun(VMRun):
             "-netdev", f"user,id=net0,hostfwd=tcp:{self.ssh_addr[0]}:{self.ssh_addr[1]}-:22",
             "-gdb", f"tcp:{self.gdb_addr[0]}:{self.gdb_addr[1]}",
         ]
+        for disk in self.extra_disks:
+            qemu_cmd.extend([
+                "-device", f"{self.block_driver_name()},drive=extra{disk}",
+                "-drive", f"file={disk},if=none,id=extra{disk},format=raw",
+            ])
         for share in self.p9_shares:
             qemu_cmd.extend([
                 "-virtfs", f"local,path={share[1]},mount_tag={share[0]},security_model=none",
