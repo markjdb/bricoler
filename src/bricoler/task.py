@@ -288,6 +288,14 @@ class Task(ABC, metaclass=TaskMeta):
 
         with chdir(Path.cwd() / self.name):
             outputs = self.run(ctx)
+            if outputs is None:
+                raise ValueError(
+                    f"Task '{self.name}' did not return any outputs, missing return statement?"
+                )
+            if type(outputs) is not dict:
+                raise TypeError(
+                    f"Task '{self.name}' returned outputs of type {type(outputs)}, expected dict"
+                )
             if set(outputs.keys()) != set(self.outputs.keys()):
                 missing = set(self.outputs.keys()) - set(outputs.keys())
                 raise ValueError(
