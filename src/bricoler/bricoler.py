@@ -23,7 +23,7 @@ from .git import GitRepository
 from .mtree import MtreeFile
 from .task import Task, TaskParameter, TaskMeta, TaskSchedule
 from .util import chdir, host_machine, info, run_cmd, warn
-from .vm import FreeBSDVM, VMImage, VMHypervisor, BhyveRun, QEMURun, SSHCommandRunner
+from .vm import FreeBSDVM, VMImage, VMHypervisor, BhyveRun, QEMURun, RVVMRun, SSHCommandRunner
 
 
 class FreeBSDSrcRepository(GitRepository):
