@@ -286,11 +286,24 @@ class MtreeFile:
             gname=gname,
             reference_dir=reference_dir,
         )
-        attribs = OrderedDict([("type", mtree_type), ("uname", uname), ("gname", gname), ("mode", mode), last_attrib])
+        attribs = OrderedDict([
+            ("type", mtree_type),
+            ("uname", uname),
+            ("gname", gname),
+            ("mode", mode),
+            last_attrib
+        ])
         entry = MtreeEntry(mtree_path, attribs)
         self._mtree[mtree_path] = entry
 
-    def add_symlink(self, *, src_symlink: Optional[Path] = None, symlink_dest=None, path_in_image: str, **kwargs):
+    def add_symlink(
+        self,
+        *,
+        src_symlink: Optional[Path] = None,
+        symlink_dest=None,
+        path_in_image: str,
+        **kwargs
+    ):
         if src_symlink is not None:
             assert symlink_dest is None
             self.add_file(src_symlink, path_in_image, **kwargs)
