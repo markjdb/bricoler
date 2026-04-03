@@ -116,7 +116,7 @@ class TaskMeta(ABCMeta):
     def _validate_anonymous_task(mcs, cls: Type['Task'], namespace) -> None:
         mcs._validate_common(cls, namespace)
 
-        invalid_keys = mcs._reserved_names & (set(namespace.keys()) - {"run", "inputs"})
+        invalid_keys = mcs._reserved_names & (set(namespace.keys()) - {"run", "inputs", "outputs"})
         if len(invalid_keys) > 0:
             raise ValueError(
                 f"Anonymous task '{cls.__name__}' cannot define: {', '.join(invalid_keys)}"
@@ -298,9 +298,15 @@ class Task(ABC, metaclass=TaskMeta):
                 )
             if set(outputs.keys()) != set(self.outputs.keys()):
                 missing = set(self.outputs.keys()) - set(outputs.keys())
-                raise ValueError(
-                    f"Task {self.name} did not produce expected outputs: {', '.join(missing)}"
-                )
+                if len(missing) > 0:
+                    raise ValueError(
+                        f"Task {self.name} did not produce expected outputs: {', '.join(missing)}"
+                    )
+                else:
+                    extra = set(outputs.keys()) - set(self.outputs.keys())
+                    raise ValueError(
+                        f"Task {self.name} produced unexpected outputs: {', '.join(extra)}"
+                    )
             for name, val in outputs.items():
                 # It would be nice if we could validate this statically...
                 expected_type = self.outputs[name]
