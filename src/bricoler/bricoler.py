@@ -8,6 +8,7 @@ import functools
 import glob
 import json
 import os
+import pydoc
 import re
 import shutil
 import sqlite3
@@ -1073,7 +1074,8 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
         }
 
     def _report(self, *args):
-        self.run_cmd(["less", Path.cwd() / "kyua-report.txt"])
+        with open(Path.cwd() / "kyua-report.txt", 'r') as f:
+            return pydoc.pager(f.read())
 
     actions = {
         'report': _report,
