@@ -651,6 +651,7 @@ class FreeBSDVMImageTask(Task):
                 efi_loader = efi_loaders[machine.split('/')[0]]
                 shutil.copyfile(stagedir / "boot/loader.efi", Path(efi_loader))
 
+            esp_image_path.unlink(missing_ok=True)
             makefs_cmd = [
                 "makefs",
                 "-t", "msdos",
