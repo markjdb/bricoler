@@ -393,7 +393,10 @@ class FreeBSDVMImageTask(Task):
                         """
                         /dev/gpt/rootfs / ufs rw 1 1
                         """ if self.filesystem == FreeBSDVMImageFilesystem.UFS else "",
-                        "none /dev/fd fdescfs rw 0 0")
+                        """
+                        none /dev/fd fdescfs rw 0 0
+                        /dev/gpt/swap non swap sw 0 0
+                        """)
 
         add_config_file("boot/loader.conf",
                         "autoboot_delay=1",
