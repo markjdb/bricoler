@@ -1352,7 +1352,7 @@ class OpenZFSTestSuiteOpenZFSBuildTask(OpenZFSBuildTask):
 class OpenZFSTestSuiteVMImageTask(FreeBSDVMImageTask):
     filesystem = FreeBSDVMImageFilesystem.UFS
 
-    image_size = 30
+    image_size = 50
 
     packages = " ".join([
         "bash",
@@ -1438,6 +1438,9 @@ class OpenZFSTestSuiteTask(FreeBSDVMBootTask):
             cmd = "/usr/local/share/zfs/zfs-tests.sh -v"
             vm.sendline(f"DISKS=\"vtbd1 vtbd2 vtbd3\" su -m tests -c \"{cmd}\"")
             vm.wait_for_prompt(timeout=10*3600)
+
+            ssh = SSHCommandRunner(vm.vmrun.ssh_addr, vm.vmrun.ssh_key)
+            ssh.scp_from("/var/tmp/test_results/current", Path.cwd() / "test_results")
         except FreeBSDVM.PanicException as e:
             # XXX-MJ should optionally attach gdb to the guest here
             raise e

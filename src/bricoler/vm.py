@@ -38,6 +38,7 @@ class SSHCommandRunner:
     def scp_from(self, src: Path, dst: Path):
         scp_cmd = [
             "scp",
+            "-r",
             "-o", "UserKnownHostsFile=/dev/null",
             "-o", "StrictHostKeyChecking=no",
             "-P", str(self.port),
