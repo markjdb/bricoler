@@ -41,7 +41,6 @@ If you use a different shell, please try adding a completion script for it and s
 Example:
 ```
 bricoler freebsd-regression-test-suite \
-    --freebsd-regression-test-suite/hypervisor=bhyve \
     --freebsd-regression-test-suite/memory=8192 \
     --freebsd-regression-test-suite/ncpus=8 \
     --freebsd-regression-test-suite/tests="sys/netpfil/pf sbin/pfctl" \
