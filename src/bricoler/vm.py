@@ -357,15 +357,28 @@ class FreeBSDVM:
             self.backtrace = backtrace
             super().__init__(f"{message}: {panicstr}")
 
-    def __init__(self, vmrun: VMRun, logfile=sys.stdout.buffer):
+    class _Tee:
+        def __init__(self, *files):
+            self.files = files
+
+        def write(self, data):
+            for f in self.files:
+                f.write(data)
+                f.flush()
+
+        def flush(self):
+            for f in self.files:
+                f.flush()
+
+    def __init__(self, vmrun: VMRun, logfiles=[sys.stdout.buffer]):
         self.vmrun = vmrun
         self.cmd = vmrun.setup()
-        self.logfile = logfile
+        self.logfile = FreeBSDVM._Tee(*logfiles)
 
     def expect(self, prompt: str, **kwargs) -> int:
         patterns = [
             prompt,
-            r"panic:\s+(?P<panic>.+)\s*\r?\n",
+            r"panic:\s+(?P<panic>[^\r\n]+)\s*\r?\n",
             # We should collect witness warnings and other non-fatal errors here too.
         ]
         pattern = self.proc.expect(patterns, **kwargs)
@@ -379,7 +392,7 @@ class FreeBSDVM:
             while True:
                 idx = self.proc.expect([
                     r"KDB:\s+enter:\s+panic\s\r?\n",
-                    r"(.*)\s*\r?\n",
+                    r"([a-zA-Z0-9_]+\(\) at [^\r\n]*)\s*\r?\n",
                 ])
 
                 if idx == 0:

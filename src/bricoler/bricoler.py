@@ -696,7 +696,8 @@ class FreeBSDVMBootTask(Task):
             self.run_cmd(vmrun.setup())
             vm = None
         else:
-            vm = FreeBSDVM(vmrun)
+            console_log = open("vm-console.log", "wb")
+            vm = FreeBSDVM(vmrun, logfiles=[console_log, sys.stdout.buffer])
 
         return {'vm': vm}
 
@@ -886,7 +887,7 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
             ssh.scp_from("/root/kyua.db", Path.cwd() / "kyua.db")
             ssh.scp_from("/root/kyua-report.txt", Path.cwd() / "kyua-report.txt")
         except FreeBSDVM.PanicException as e:
-            # XXX-MJ should optionally attach gdb to the guest here
+            self._gdb()
             raise e
         return outputs
 
@@ -1442,7 +1443,7 @@ class OpenZFSTestSuiteTask(FreeBSDVMBootTask):
             ssh = SSHCommandRunner(vm.vmrun.ssh_addr, vm.vmrun.ssh_key)
             ssh.scp_from("/var/tmp/test_results/current", Path.cwd() / "test_results")
         except FreeBSDVM.PanicException as e:
-            # XXX-MJ should optionally attach gdb to the guest here
+            self._gdb()
             raise e
         return outputs
 
