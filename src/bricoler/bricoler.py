@@ -857,7 +857,7 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
             default=os.cpu_count() // 2,  # XXX-MJ duplicating the ncpus value
         ),
         'tests': TaskParameter(
-            description="A space-separated list of test cases or test suites to run, "
+            description="A comma-separated list of test cases or test suites to run, "
                         "or the empty string to run all tests",
             default="",
         ),
@@ -879,7 +879,7 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
                 "-j", str(self.parallelism),
                 "-r", "/root/kyua.db",
                 "-o", "/root/kyua-report.txt",
-                self.tests
+                self.tests.replace(',', ' ')
             ]
             vm.sendline(" ".join(cmd))
             vm.wait_for_prompt(timeout=10*3600)
