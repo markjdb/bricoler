@@ -716,6 +716,7 @@ class FreeBSDVMBootTask(Task):
             "-ex", f"source {sysroot / 'usr/lib/debug/boot/kernel/kernel-gdb.py'}",
             "-ex", f"target remote {host}:{port}",
         ]
+        gdb_cmd += args
         self.run_cmd(gdb_cmd)
 
     def _ssh(self, *args):
@@ -887,7 +888,7 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
             ssh.scp_from("/root/kyua.db", Path.cwd() / "kyua.db")
             ssh.scp_from("/root/kyua-report.txt", Path.cwd() / "kyua-report.txt")
         except FreeBSDVM.PanicException as e:
-            self._gdb()
+            self._gdb("-ex", f"thread {e.cpuid + 1}")
             raise e
         return outputs
 
@@ -1443,7 +1444,7 @@ class OpenZFSTestSuiteTask(FreeBSDVMBootTask):
             ssh = SSHCommandRunner(vm.vmrun.ssh_addr, vm.vmrun.ssh_key)
             ssh.scp_from("/var/tmp/test_results/current", Path.cwd() / "test_results")
         except FreeBSDVM.PanicException as e:
-            self._gdb()
+            self._gdb("-ex", f"thread {e.cpuid + 1}")
             raise e
         return outputs
 
