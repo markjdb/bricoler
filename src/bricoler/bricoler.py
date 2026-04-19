@@ -115,7 +115,6 @@ class FreeBSDSrcBuildTask(Task):
     parameters = {
         'clean': TaskParameter(
             description="Clean build directories before building",
-            type=bool,
             default=False,
         ),
         'kernel_config': TaskParameter(
@@ -272,7 +271,6 @@ class FreeBSDVMImageTask(Task):
         ),
         'image_size': TaskParameter(
             description="Size of the filesystem image in GiB",
-            type=int,
             default=10,
         ),
         'loader_tunables': TaskParameter(
@@ -297,7 +295,6 @@ class FreeBSDVMImageTask(Task):
         ),
         'single_user': TaskParameter(
             description="Boot into single-user mode",
-            type=bool,
             default=False,
         ),
         'sudo_users': TaskParameter(
@@ -632,17 +629,14 @@ class FreeBSDVMBootTask(Task):
         ),
         'interactive': TaskParameter(
             description="Run the VM in interactive mode",
-            type=bool,
             default=True,
         ),
         'memory': TaskParameter(
             description="Amount of memory to allocate to the VM in MiB",
             default=2048,
-            type=int,
         ),
         'ncpus': TaskParameter(
             description="Number of CPUs to allocate to the VM",
-            type=int,
             default=2,
         ),
         'p9_shares': TaskParameter(
@@ -651,7 +645,6 @@ class FreeBSDVMBootTask(Task):
         ),
         'reboot': TaskParameter(
             description="Restart the VM when it exits due to a reboot",
-            type=bool,
             default=False,
         ),
     }
@@ -848,12 +841,10 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
     parameters = {
         'count': TaskParameter(
             description="Number of times to run the tests",
-            type=int,
             default=1,
         ),
         'parallelism': TaskParameter(
             description="Number of tests to run in parallel",
-            type=int,
             default=os.cpu_count() // 2,  # XXX-MJ duplicating the ncpus value
         ),
         'tests': TaskParameter(
@@ -1136,7 +1127,6 @@ class EC2LaunchTask(EC2MetaTask):
         ),
         'volume_size': TaskParameter(
             description="Size of the root volume in GiB",
-            type=int,
             default=20,
         ),
     }
@@ -1174,7 +1164,6 @@ class EC2CleanTask(EC2MetaTask):
     parameters = {
         'all': TaskParameter(
             description="Clean up all EC2 resources created by bricoler across all workdirs",
-            type=bool,
             default=False,
         ),
     }
@@ -1214,12 +1203,10 @@ class EC2ListInstanceTypesTask(EC2MetaTask):
     parameters = {
         'min_ncpu': TaskParameter(
             description="Filter instance types by minimum number of CPUs",
-            type=int,
             default=1,
         ),
         'min_memory': TaskParameter(
             description="Filter instance types by minimum memory (in MiB)",
-            type=int,
             default=256,
         ),
     }
@@ -1259,12 +1246,10 @@ class OpenZFSBuildTask(Task):
     parameters = {
         'clean': TaskParameter(
             description="Clean build artifacts before building",
-            type=bool,
             default=False
         ),
         'sysdir': TaskParameter(
             description="Path to the FreeBSD kernel source to compile against",
-            type=Path,
             default=Path("/usr/src/sys")
         ),
     }
