@@ -20,6 +20,7 @@
 # from parent classes, providing a way to extend and customize tasks.
 #
 
+import builtins
 import inspect
 import subprocess
 from abc import ABC, ABCMeta, abstractmethod
@@ -161,7 +162,7 @@ class TaskParameter:
     def __init__(
         self,
         description: str = '',
-        type: type = str,
+        type: type = None,
         default: Any = None,
         choices: Optional[List[Any]] = None,
         required: bool = False,
@@ -173,10 +174,14 @@ class TaskParameter:
         self.required = required
 
         if self.default is not None:
+            if self.type is None:
+                self.type = builtins.type(self.default)
             if not callable(self.default) and not isinstance(self.default, self.type):
                 raise TypeError(
                     f"Default value {type(self.default)} does not match parameter type {self.type}"
                 )
+        elif self.type is None:
+            self.type = str
         self._initialized = True
 
     def __setattr__(self, key, value):
