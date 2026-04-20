@@ -67,12 +67,16 @@ class GitCheckoutTask(Task):
     name = "git-checkout"
 
     parameters = {
+        'branch': TaskParameter(
+            description="Branch to check out",
+        ),
+        'shallow': TaskParameter(
+            description="Perform a shallow clone and fetch",
+            default=True,
+        ),
         'url': TaskParameter(
             description="URL of the Git repository to clone, or a filesystem path",
             required=True,
-        ),
-        'branch': TaskParameter(
-            description="Branch to check out",
         ),
     }
     outputs = {
@@ -80,8 +84,9 @@ class GitCheckoutTask(Task):
     }
 
     def run(self, ctx, repotype: Type[GitRepository] = GitRepository):
-        repo = repotype(self.url, Path("./src"), self.branch, no_cmds=self.skip)
-        repo.update()
+        repo = repotype(self.url, Path("./src"), self.branch,
+                        shallow=self.shallow, no_cmds=self.skip)
+        repo.update(shallow=self.shallow)
         return {'repo': repo}
 
 

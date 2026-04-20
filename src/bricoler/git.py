@@ -27,6 +27,7 @@ class GitRepository:
         url: str,
         path: Path,
         branch: Optional[str] = None,
+        shallow: bool = True,
         no_cmds: bool = False,
     ):
         self.url = url
@@ -39,26 +40,32 @@ class GitRepository:
             self.path = Path(url).resolve()
         else:
             self.path = path.resolve()
-        self.clone()
+        self.clone(shallow=shallow)
 
     def git(self, cmd: List[str], *args, **kwargs):
         if not self.path:
             raise ValueError("Repository has not been cloned yet")
         return run_cmd(['git', '-C', self.path] + cmd, *args, **kwargs)
 
-    def clone(self):
+    def isshallow(self) -> bool:
+        output = self.git(["rev-parse", "--is-shallow-repository"], capture_output=True)
+        return output.stdout.decode().strip() == "true"
+
+    def clone(self, shallow=True):
         if not (self.path / ".git").exists():
             if self.external:
                 raise ValueError(
                     f"Repository path '{self.url}' does not exist or is not a repo clone"
                 )
-            cmd = ["git", "clone", "--depth=1"]
+            cmd = ["git", "clone"]
+            if shallow:
+                cmd += ["--depth=1"]
             if self.branch:
                 cmd += ["--branch", self.branch]
             cmd += [self.url, str(self.path.resolve())]
             run_cmd(cmd)
 
-    def update(self):
+    def update(self, shallow=True):
         assert self.path is not None
         if self.external:
             # This repository is externally managed.
@@ -74,7 +81,10 @@ class GitRepository:
             raise ValueError(
                 f"Clone at '{self.path}' has no remote corresponding to '{self.url}'"
             )
-        self.git(["fetch", remote])
+        if shallow or not self.isshallow():
+            self.git(["fetch", remote])
+        else:
+            self.git(["fetch", "--unshallow", remote])
         self.git(["checkout", f"{self.branch}"])
         self.git(["merge", "--ff-only", remote, f"{self.branch}"])
 
