@@ -124,7 +124,7 @@ class BhyveRun(VMRun):
     def access():
         if os.access("/dev/vmmctl", os.R_OK | os.W_OK):
             return BhyveRun.PrivModel.UNPRIV
-        if run_cmd(["mdo", "test" "-w", "/dev/vmmctl"], check_result=False).returncode == 0:
+        if run_cmd(["mdo", "test", "-w", "/dev/vmmctl"], check_result=False).returncode == 0:
             return BhyveRun.PrivModel.MDO
         if run_cmd(["sudo", "-ln", "bhyve"], check_result=False).returncode == 0 and \
            run_cmd(["sudo", "-ln", "bhyvectl"], check_result=False).returncode == 0:
