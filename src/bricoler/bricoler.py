@@ -180,6 +180,13 @@ class FreeBSDSrcBuildTask(Task):
                 f"Unknown target platform: {self.machine}"
             )
 
+        # If the kernel config is a path, extract the basename and dirname.
+        kernconf = self.kernel_config
+        kernconfdir = None
+        if '/' in kernconf:
+            kernconf = Path(kernconf).name
+            kernconfdir = Path(self.kernel_config).parent
+
         objdir = self.objdir
         if objdir is None:
             objdir = Path(f"./obj.{machine}.{machine_arch}").resolve()
@@ -204,8 +211,10 @@ class FreeBSDSrcBuildTask(Task):
                 f"METALOG={metalog}",
                 f"TARGET={machine}",
                 f"TARGET_ARCH={machine_arch}",
-                f"KERNCONF={self.kernel_config}",
+                f"KERNCONF={kernconf}",
             ]
+            if kernconfdir is not None:
+                args.append(f"KERNCONFDIR={kernconfdir}")
             if self.clean:
                 args.append("WITH_CLEAN=")
             else:
