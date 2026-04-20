@@ -1336,7 +1336,7 @@ class OpenZFSTestSuiteFreeBSDSrcBuildTask(FreeBSDSrcBuildAndInstallTask):
     ])
 
 
-class OpenZFSTestSuiteOpenZFSBuildTask(OpenZFSBuildTask):
+class OpenZFSTestSuiteBuildTask(OpenZFSBuildTask):
     inputs = {
         'freebsd_build': OpenZFSTestSuiteFreeBSDSrcBuildTask,
     }
@@ -1372,7 +1372,7 @@ class OpenZFSTestSuiteVMImageTask(FreeBSDVMImageTask):
     sudo_users = "tests"
 
     inputs = {
-        'build': OpenZFSTestSuiteOpenZFSBuildTask,
+        'build': OpenZFSTestSuiteBuildTask,
     }
 
     def run(self, ctx):
