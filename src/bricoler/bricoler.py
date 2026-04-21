@@ -1448,6 +1448,174 @@ class OpenZFSTestSuiteTask(FreeBSDVMBootTask):
         return outputs
 
 
+class SyzkallerGitCheckoutTask(GitCheckoutTask):
+    """
+    Clone the syzkaller repository, or update an existing clone.
+    """
+    name = "syzkaller-git-checkout"
+
+    url = "https://github.com/google/syzkaller"
+    branch = "master"
+    shallow = False  # Some syzkaller tests require a full clone.
+
+    outputs = {
+        'repo': GitRepository,
+    }
+
+
+class SyzkallerBuildTask(Task):
+    """
+    Build syzkaller from a Git repository checkout.
+    """
+    name = "syzkaller-build"
+
+    parameters = {
+        'test': TaskParameter(
+            description="Run tests after building",
+            default=True
+        ),
+    }
+
+    inputs = {
+        'src': SyzkallerGitCheckoutTask,
+    }
+
+    outputs = {
+        'bindir': Path,
+        'repo': GitRepository,
+    }
+
+    def run(self, ctx):
+        with chdir(self.src.repo.path):
+            env = {'GOMAXPROCS': str(ctx.max_jobs)}
+            self.run_cmd(["gmake"], env=env)
+            if self.test:
+                self.run_cmd(["gmake", "test"], env=env)
+        return {
+            'bindir': self.src.repo.path / "bin",
+            'repo': self.src.repo,
+        }
+
+
+class SyzkallerFuzzFreeBSDBuildTask(FreeBSDSrcBuildAndInstallTask):
+    def run(self, ctx):
+        with open("SYZKALLER", "w") as f:
+            f.write("# Added by bricoler\n"
+                   f"include {self.kernel_config}\n"
+                    "ident SYZKALLER\n"
+                    "options COVERAGE\n"
+                    "options KCOV\n")
+            f.flush()
+            self.kernel_config = str(Path.cwd() / "SYZKALLER")
+            return super().run(ctx)
+
+
+class SyzkallerFuzzFreeBSDVMImageTask(FreeBSDVMImageTask):
+    inputs = {
+        'build': SyzkallerFuzzFreeBSDBuildTask,
+    }
+
+
+class SyzkallerFuzzFreeBSDTask(Task):
+    """
+    Run syzkaller against a FreeBSD target
+    """
+    name = "syzkaller-fuzz-freebsd"
+
+    parameters = {
+        'dashboard_addr': TaskParameter(
+            description="Address of the syzkaller HTTP dashboard",
+            default="0.0.0.0:8080",
+        ),
+        'debug': TaskParameter(
+            description="Run syzkaller in debug mode with a single VM and verbose logging",
+            default=False,
+        ),
+        'hypervisor': TaskParameter(
+            description="Hypervisor to use for running the VM",
+            type=VMHypervisor,
+            default=VMHypervisor.BHYVE if BhyveRun.canrun() else VMHypervisor.QEMU,
+        ),
+        'vm_count': TaskParameter(
+            description="Number of VMs to run in parallel (ignored in debug mode)",
+            default=os.cpu_count() // 2,
+        ),
+        'vm_ncpu': TaskParameter(
+            description="Number of CPUs to allocate to each VM",
+            default=2,
+        ),
+        'vm_memory': TaskParameter(
+            description="Amount of memory to allocate to each VM in MiB",
+            default=2048,
+        ),
+        'zfs_dataset': TaskParameter(
+            description="ZFS dataset to use for storing syzkaller workdir and VM images",
+            type=str,
+        )
+    }
+
+    inputs = {
+        'syzkaller': SyzkallerBuildTask,
+        'vm_image': SyzkallerFuzzFreeBSDVMImageTask,
+    }
+
+    def run(self, ctx):
+        hypervisor_args = {}
+        image_path = None
+        if self.hypervisor == VMHypervisor.BHYVE:
+            if self.zfs_dataset is None:
+                raise ValueError("zfs_dataset parameter is required when using bhyve")
+            def zfs_get(dataset, prop):
+                cmd = ["zfs", "get", "-H", "-o", "value", prop, dataset]
+                return self.run_cmd(cmd, capture_output=True).stdout.decode().strip()
+            mountpoint = zfs_get(self.zfs_dataset, "mountpoint")
+            if mountpoint == "none":
+                raise ValueError(f"ZFS dataset {self.zfs_dataset} is not mounted")
+
+            # bhyve doesn't support transient disk snapshots, so we have to provide
+            # a ZFS dataset to syz-manager that it can clone.
+            hypervisor_args['dataset'] = self.zfs_dataset
+            hypervisor_args['bootrom'] = "/usr/local/share/uefi-firmware/BHYVE_UEFI.fd"
+
+            image_path = str(Path(mountpoint) / "syzkaller.img")
+            shutil.copyfile(self.vm_image.image.path, image_path)
+        else:
+            # --enable-kvm is hard-coded in the QEMU parameters for FreeBSD
+            # targets, so we have to do this fragile thing to remove it.
+            hypervisor_args['qemu_args'] = ""
+
+            image_path = self.vm_image.image.path
+
+        workdir = Path.cwd() / "workdir"
+        workdir.mkdir(exist_ok=True)
+
+        machine = self.vm_image.image.machine.split('/', maxsplit=1)[1]
+        params = {
+            'target': f"freebsd/{machine}",
+            'workdir': str(workdir),
+            'type': f"{self.hypervisor.value.lower()}",
+            'syzkaller': str(self.syzkaller.repo.path),
+            'image': str(image_path),
+            'http': self.dashboard_addr,
+            'ssh_user': "root",
+            'sshkey': str(self.vm_image.ssh_key),
+            'procs': 2,
+            'vm': {
+                'cpu': self.vm_ncpu,
+                'mem': str(self.vm_memory) + "M",
+                'count': self.vm_count,
+            } | hypervisor_args,
+        }
+
+        # Write the parameters to a JSON config file.
+        with open("syz-manager.cfg", "w") as f:
+            json.dump(params, f, indent=2)
+
+        cmd = [self.syzkaller.bindir / "syz-manager", "-config", "syz-manager.cfg"]
+        if self.debug:
+            cmd.append("-debug")
+        self.run_cmd(cmd)
+
 #
 # Features to add:
 # - automatic bisection for build and test failures
