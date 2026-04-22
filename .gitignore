@@ -1,5 +1,2 @@
-*.pico
-*.so
-*.so.debug
-*.so.full
-contrib/orch/install
+dist/*
+bricoler.json

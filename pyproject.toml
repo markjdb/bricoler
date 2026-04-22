@@ -1,0 +1,62 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bricoler"
+version = "0.1.0"
+description = 'utility for running FreeBSD src development workflows'
+readme = "README.md"
+requires-python = ">=3.10"
+license = "BSD-2-Clause"
+keywords = []
+authors = [
+  { name = "Mark Johnston", email = "markj@FreeBSD.org" },
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Python :: Implementation :: PyPy",
+]
+dependencies = [
+  "pexpect"
+]
+
+[project.scripts]
+bricoler = "bricoler.bricoler:main"
+
+[project.urls]
+Documentation = "https://github.com/markjdb/bricoler#readme"
+Issues = "https://github.com/markjdb/bricoler/issues"
+Source = "https://github.com/markjdb/bricoler"
+
+[tool.hatch.build.targets.wheel.shared-data]
+"share/bricoler.1" = "share/man/man1/bricoler.1"
+"share/bricoler-completion.bash" = "share/bash-completion/completions/bricoler"
+
+[tool.hatch.envs.types]
+extra-dependencies = [
+  "mypy>=1.0.0",
+]
+[tool.hatch.envs.types.scripts]
+check = "mypy --install-types --non-interactive {args:src/bricoler tests}"
+
+[tool.coverage.run]
+source_pkgs = ["bricoler", "tests"]
+branch = true
+parallel = true
+
+[tool.coverage.paths]
+bricoler = ["src/bricoler", "*/bricoler/src/bricoler"]
+tests = ["tests", "*/bricoler/tests"]
+
+[tool.coverage.report]
+exclude_lines = [
+  "no cov",
+  "if __name__ == .__main__.:",
+  "if TYPE_CHECKING:",
+]

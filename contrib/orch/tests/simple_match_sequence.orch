@@ -1,7 +1,0 @@
-
-write "Fish Dog\r"
-
--- We chop 'fish' off of the buffer, then we should still have ' Dog' available
--- for matching.
-match "Fish"
-match "Dog"

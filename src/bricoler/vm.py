@@ -1,0 +1,428 @@
+#
+# Copyright (c) Mark Johnston <markj@FreeBSD.org>
+#
+# SPDX-License-Identifier: BSD-2-Clause
+#
+
+import functools
+import os
+import sys
+import uuid
+from abc import abstractmethod
+from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+from .util import run_cmd, unused_tcp_addr
+
+import pexpect
+
+
+class SSHCommandRunner:
+    def __init__(self, addr: Tuple[str, Union[str, int]], key: Path):
+        self.addr = addr[0]
+        self.port = addr[1]
+        self.key = key
+
+    def run_cmd(self, cmd: List[str] = []):
+        ssh_cmd = [
+            "ssh",
+            "-o", "UserKnownHostsFile=/dev/null",
+            "-o", "StrictHostKeyChecking=no",
+            "-p", str(self.port),
+            "-i", str(self.key),
+            f"root@{self.addr}",
+        ] + cmd
+        run_cmd(ssh_cmd, check_result=True)
+
+    def scp_from(self, src: Path, dst: Path):
+        scp_cmd = [
+            "scp",
+            "-r",
+            "-o", "UserKnownHostsFile=/dev/null",
+            "-o", "StrictHostKeyChecking=no",
+            "-P", str(self.port),
+            "-i", str(self.key),
+            f"root@{self.addr}:{src}",
+            str(dst),
+        ]
+        run_cmd(scp_cmd, check_result=True)
+
+
+class VMImage:
+    def __init__(self, path: Path, machine: str):
+        self.path = path
+        self.machine = machine
+
+    def select(self, d: Dict[str, str], default=None) -> str:
+        val = d.get(self.machine)
+        if val is None:
+            val = d.get(self.machine.split('/', maxsplit=1)[0])
+            if val is None:
+                return default
+        return val
+
+
+class VMHypervisor(Enum):
+    BHYVE = 'bhyve'
+    QEMU = 'qemu'
+    RVVM = 'rvvm'
+
+
+class VMRun:
+    class BlockDriver(Enum):
+        VIRTIO = 1,
+        AHCI = 2,
+        NVME = 3,
+
+    class NetworkDriver(Enum):
+        VIRTIO = 1,
+        E1000 = 2,
+        NONE = 3,
+
+    def __init__(
+        self,
+        image: VMImage,
+        extra_disks: List[str] = [],
+        memory: int = 2048,
+        ncpus: int = 2,
+        block_driver: BlockDriver = BlockDriver.VIRTIO,
+        nic_driver: NetworkDriver = NetworkDriver.VIRTIO,
+        p9_shares: List[Tuple[str, Path]] = [],
+        ssh_key: Optional[Path] = None,
+    ):
+        self.image = image
+        self.extra_disks = extra_disks
+        self.memory = memory
+        self.ncpus = ncpus
+        self.block_driver = block_driver
+        self.nic_driver = nic_driver
+        self.p9_shares = p9_shares
+        self.ssh_key = ssh_key
+        self.gdb_addr = unused_tcp_addr()
+        self.ssh_addr = unused_tcp_addr()
+
+    @abstractmethod
+    def setup(self) -> List[Any]: ...
+
+    @abstractmethod
+    def ssh_addr(self) -> Tuple[str, int]: ...
+
+    def ssh_handle(self):
+        return SSHCommandRunner(self.ssh_addr, self.ssh_key)
+
+
+class BhyveRun(VMRun):
+    class PrivModel(Enum):
+        INVALID = 1,  # Cannot run bhyve.
+        UNPRIV = 2,   # Can run bhyve with current privileges.
+        MDO = 3,      # Can run bhyve with mdo(1).
+        SUDO = 4,     # Can run bhyve with sudo.
+
+    @functools.cache
+    @staticmethod
+    def access():
+        if os.access("/dev/vmmctl", os.R_OK | os.W_OK):
+            return BhyveRun.PrivModel.UNPRIV
+        if run_cmd(["mdo", "test", "-w", "/dev/vmmctl"], check_result=False).returncode == 0:
+            return BhyveRun.PrivModel.MDO
+        if run_cmd(["sudo", "-ln", "bhyve"], check_result=False).returncode == 0 and \
+           run_cmd(["sudo", "-ln", "bhyvectl"], check_result=False).returncode == 0:
+            return BhyveRun.PrivModel.SUDO
+        return BhyveRun.PrivModel.INVALID
+
+    @staticmethod
+    @functools.cache
+    def canrun() -> bool:
+        return BhyveRun.access() != BhyveRun.PrivModel.INVALID
+
+    @staticmethod
+    @functools.cache
+    def has_monitor_mode() -> bool:
+        usage = run_cmd(["bhyve", "--help"], capture_output=True, check_result=False, text=True)
+        return "-M: monitor mode" in usage.stderr
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.image.machine.split('/')[0] not in ('amd64', 'arm64', 'i386'):
+            raise ValueError(
+                f"bhyve does not support machine type '{self.image.machine}'"
+            )
+
+    def block_driver_name(self) -> str:
+        driver = self.block_driver
+        if driver == VMRun.BlockDriver.VIRTIO:
+            return "virtio-blk"
+        elif driver == VMRun.BlockDriver.AHCI:
+            return "ahci-hd"
+        elif driver == VMRun.BlockDriver.NVME:
+            return "nvme"
+
+    def bootrom_path(self) -> Path:
+        return self.image.select({
+            'amd64': Path('/usr/local/share/uefi-firmware/BHYVE_UEFI.fd'),
+            'arm64': Path('/usr/local/share/u-boot/u-boot-bhyve-arm64/u-boot.bin'),
+            'i386': Path('/usr/local/share/uefi-firmware/BHYVE_UEFI_32.fd'),
+        })
+
+    def network_driver_name(self) -> str:
+        match self.nic_driver:
+            case VMRun.NetworkDriver.VIRTIO: return "virtio-net"
+            case VMRun.NetworkDriver.E1000: return "e1000"
+        raise ValueError(f"Unsupported network driver {driver} is not supported by bhyve")
+
+    def setup(self) -> List[Any]:
+        if BhyveRun.has_monitor_mode():
+            vmname = f"bricoler-{uuid.uuid4()}"
+        else:
+            destroy_cmd = ["bhyvectl", f"--vm={vmname}", "--destroy"]
+            run_cmd(destroy_cmd, check_result=False)
+
+        if BhyveRun.access() == BhyveRun.PrivModel.MDO:
+            bhyve_cmd = ["mdo", "bhyve"]
+        elif BhyveRun.access() == BhyveRun.PrivModel.SUDO:
+            bhyve_cmd = ["sudo", "bhyve"]
+        else:
+            bhyve_cmd = ["bhyve"]
+        bhyve_cmd.extend(["-c", self.ncpus, "-m", f"{self.memory}M"])
+
+        devindex = 0
+
+        def add_device(desc):
+            nonlocal devindex
+            bhyve_cmd.extend(["-s", f"{devindex}:0,{desc}"])
+            devindex += 1
+        add_device("hostbridge")
+
+        bootrom = self.bootrom_path()
+        if self.image.machine.startswith('amd64/') or self.image.machine.startswith('i386/'):
+            bhyve_cmd.extend([
+                "-H",
+                "-l", "com1,stdio",
+                "-l", f"bootrom,{bootrom}",
+                "-G", f"{self.gdb_addr[0]}:{self.gdb_addr[1]}",
+                "-M",
+            ])
+            add_device("lpc")
+        else:
+            bhyve_cmd.extend([
+                "-o", "console=stdio",
+                "-o", f"bootrom,{bootrom}"
+            ])
+        add_device(f"{self.block_driver_name()},{self.image.path}")
+        for disk in self.extra_disks:
+            add_device(f"{self.block_driver_name()},{disk}")
+        if self.nic_driver != VMRun.NetworkDriver.NONE:
+            add_device(f"{self.network_driver_name()},slirp,open,hostfwd=tcp:{self.ssh_addr[0]}:{self.ssh_addr[1]}-:22")
+        for share in self.p9_shares:
+            add_device(f"virtio-9p,{share[0]}={share[1]}")
+
+        bhyve_cmd.extend([vmname])
+
+        return [str(a) for a in bhyve_cmd]
+
+
+class RVVMRun(VMRun):
+    def setup(self) -> List[str]:
+        rvvm_cmd = [
+            "rvvm",
+            "/usr/local/share/RVVM/fw_payload.bin",
+            "-image", f"{self.image.path}",
+            "-mem", f"{self.memory}M",
+            "-smp", f"{self.ncpus}",
+            "-nogui",
+        ]
+
+        match self.nic_driver:
+            case VMRun.NetworkDriver.VIRTIO:
+                rvvm_cmd.extend(["-portfwd", f"tcp/{self.ssh_addr[0]}:{self.ssh_addr[1]}=22"])
+            case VMRun.NetworkDriver.NONE:
+                rvvm_cmd.extend(["-nonet"])
+            case _:
+                raise ValueError(f"Unsupported network driver {self.nic_driver} is not supported by RVVM")
+
+        return rvvm_cmd
+
+class QEMURun(VMRun):
+    def bios_path(self) -> Optional[Path]:
+        return self.image.select({
+            # XXX-MJ add some dict type which automatically checks for the path
+            #        and suggests some recourse if it's not available
+            'amd64': Path("/usr/local/share/edk2-qemu/QEMU_UEFI-x86_64.fd"),
+            'arm': Path("/usr/local/share/u-boot/u-boot-qemu-arm/u-boot.bin"),
+            'arm64': Path("/usr/local/share/qemu/edk2-aarch64-code.fd"),
+            'riscv': Path("/usr/local/share/opensbi/lp64/generic/firmware/fw_jump.elf"),
+        })
+
+    def kernel_path(self) -> Optional[Path]:
+        kernels = {
+            # XXX-MJ add some dict type which automatically checks for the path
+            #        and suggests some recourse if it's not available
+            'riscv': Path("/usr/local/share/u-boot/u-boot-qemu-riscv64/u-boot.bin"),
+        }
+        return kernels.get(self.image.machine.split('/', maxsplit=1)[0], None)
+
+    def block_driver_name(self) -> str:
+        driver = self.block_driver
+        if driver == VMRun.BlockDriver.VIRTIO:
+            return "virtio-blk-pci"
+        else:
+            raise ValueError(
+                f"Unsupported block driver {driver} is not supported by QEMU"
+            )
+
+    def nic_driver_name(self) -> str:
+        driver = self.nic_driver
+        if driver == VMRun.NetworkDriver.VIRTIO:
+            return "virtio-net-pci"
+        else:
+            raise ValueError(
+                f"Unsupported network driver {driver} is not supported by QEMU"
+            )
+
+    def machine_type(self) -> str:
+        return self.image.select({
+            'amd64': "q35",
+            'arm64': "virt,gic-version=3",
+        }, "virt")
+
+    def setup(self) -> List[Any]:
+        exe = self.image.select({
+            'amd64': 'qemu-system-x86_64',
+            'i386': 'qemu-system-i386',
+            'arm': 'qemu-system-arm',
+            'arm64': 'qemu-system-aarch64',
+            'arm64/aarch64c': 'qemu-system-morello',
+            'riscv': 'qemu-system-riscv64',
+        })
+        if exe is None:
+            raise ValueError(
+                f"qemu does not support machine type '{self.image.machine}'"
+            )
+
+        cpu = self.image.select({
+            'arm64/aarch64c': "morello"
+        }, "max")
+
+        qemu_cmd = [
+            exe,
+            "-nographic",
+            "-no-reboot",
+            "-cpu", cpu,
+            "-m", f"{self.memory}M",
+            "-smp", self.ncpus,
+            "-device", "virtio-rng-pci",
+            "-device", f"{self.block_driver_name()},drive=image",
+            "-drive", f"file={self.image.path},if=none,id=image,format=raw",
+            "-gdb", f"tcp:{self.gdb_addr[0]}:{self.gdb_addr[1]}",
+        ]
+        for disk in self.extra_disks:
+            qemu_cmd.extend([
+                "-device", f"{self.block_driver_name()},drive=extra{disk}",
+                "-drive", f"file={disk},if=none,id=extra{disk},format=raw",
+            ])
+        for share in self.p9_shares:
+            qemu_cmd.extend([
+                "-virtfs", f"local,path={share[1]},mount_tag={share[0]},security_model=none",
+            ])
+        machine_type = self.machine_type()
+        if machine_type is not None:
+            qemu_cmd.extend(["-M", machine_type])
+        bios_path = self.bios_path()
+        if bios_path is not None:
+            qemu_cmd.extend(["-bios", bios_path])
+        kernel_path = self.kernel_path()
+        if kernel_path is not None:
+            qemu_cmd.extend(["-kernel", kernel_path])
+        if self.nic_driver != VMRun.NetworkDriver.NONE:
+            qemu_cmd.extend([
+                "-device", f"{self.nic_driver_name()},netdev=net0",
+                "-netdev", f"user,id=net0,hostfwd=tcp:{self.ssh_addr[0]}:{self.ssh_addr[1]}-:22",
+            ])
+
+        return [str(a) for a in qemu_cmd]
+
+
+class FreeBSDVM:
+    class PanicException(RuntimeError):
+        def __init__(
+            self,
+            panicstr: str,
+            cpuid: int,
+            backtrace: str,
+            message: Optional[str] = "VM panicked",
+        ):
+            self.panicstr = panicstr
+            self.cpuid = cpuid
+            self.backtrace = backtrace
+            super().__init__(f"{message}: {panicstr}")
+
+    class _Tee:
+        def __init__(self, *files):
+            self.files = files
+
+        def write(self, data):
+            for f in self.files:
+                f.write(data)
+                f.flush()
+
+        def flush(self):
+            for f in self.files:
+                f.flush()
+
+    def __init__(self, vmrun: VMRun, logfiles=[sys.stdout.buffer]):
+        self.vmrun = vmrun
+        self.cmd = vmrun.setup()
+        self.logfile = FreeBSDVM._Tee(*logfiles)
+
+    def expect(self, prompt: str, **kwargs) -> int:
+        patterns = [
+            prompt,
+            r"panic:\s+(?P<panic>[^\r\n]+)\s*\r?\n",
+            # We should collect witness warnings and other non-fatal errors here too.
+        ]
+        pattern = self.proc.expect(patterns, **kwargs)
+        if pattern == 1:
+            # Collect the panic string, CPU ID and backtrace.
+            panicstr = self.proc.match.group("panic").strip().decode()
+            self.proc.expect(r"cpuid\s*=\s*(?P<cpuid>\d+)\s*\r?\n")
+            cpuid = int(self.proc.match.group('cpuid'))
+            self.proc.expect(r"KDB:\s+stack backtrace:\s*\r?\n")
+            backtrace_lines = []
+            while True:
+                idx = self.proc.expect([
+                    r"KDB:\s+enter:\s+panic\s\r?\n",
+                    r"([a-zA-Z0-9_]+\(\) at [^\r\n]*)\s*\r?\n",
+                ])
+
+                if idx == 0:
+                    break
+                else:
+                    line = self.proc.match.group(1).decode()
+                    backtrace_lines.append(line)
+
+            # We could potentially symbolize the backtrace using addr2line,
+            # or attach a debugger and get full output.
+            backtrace = "\n".join(backtrace_lines)
+            raise self.PanicException(panicstr, cpuid, backtrace)
+        return pattern
+
+    def sendline(self, line: str):
+        self.proc.sendline(line)
+
+    def boot_to_login(self):
+        self.proc = pexpect.spawn(
+            self.cmd[0],
+            self.cmd[1:],
+            logfile=self.logfile,
+        )
+        try:
+            self.expect("login:", timeout=600)
+            self.sendline("root")
+            self.wait_for_prompt()
+        except self.PanicException as e:
+            e.args = (f"VM panicked during boot: {e.panicstr}",)
+            raise e
+
+    def wait_for_prompt(self, **kwargs):
+        self.expect("root@.*#", **kwargs)
