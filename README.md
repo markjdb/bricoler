@@ -12,6 +12,7 @@ The basic idea is to simplify common src development tasks by provding a framewo
 ## Table of Contents
 
 - [Installation](#installation)
+- [Usage](#usage)
 - [License](#license)
 
 ## Installation
