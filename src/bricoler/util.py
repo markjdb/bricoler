@@ -6,6 +6,7 @@
 
 import functools
 import os
+import signal
 import socket
 import subprocess
 import sys
@@ -74,7 +75,33 @@ def run_cmd(
         env = tmp
         assert kwargs.get('env') is None
         kwargs['env'] = env
-    result = subprocess.run(cmd, *args, **kwargs)
+
+    capture_output = kwargs.pop('capture_output', False)
+    if capture_output:
+        kwargs['stdout'] = subprocess.PIPE
+        kwargs['stderr'] = subprocess.PIPE
+
+    new_pgrp = kwargs.get('process_group') == 0
+    old_pgrp = None
+    old_sigttou = None
+    if new_pgrp and sys.stdin.isatty():
+        fd = sys.stdin.fileno()
+        old_pgrp = os.tcgetpgrp(fd)
+        old_sigttou = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+
+    with subprocess.Popen(cmd, *args, **kwargs) as process:
+        if new_pgrp and old_pgrp is not None:
+            os.tcsetpgrp(fd, process.pid)
+
+        try:
+            stdout, stderr = process.communicate()
+            returncode = process.returncode
+        finally:
+            if old_pgrp is not None:
+                os.tcsetpgrp(fd, old_pgrp)
+                signal.signal(signal.SIGTTOU, old_sigttou)
+
+    result = subprocess.CompletedProcess(cmd, returncode, stdout, stderr)
     if check_result and result.returncode != 0:
         raise subprocess.CalledProcessError(result.returncode, cmd)
     return result

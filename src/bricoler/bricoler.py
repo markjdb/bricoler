@@ -725,7 +725,7 @@ class FreeBSDVMBootTask(Task):
             "-ex", f"target remote {host}:{port}",
         ]
         gdb_cmd += args
-        self.run_cmd(gdb_cmd)
+        self.run_cmd(gdb_cmd, process_group=0)
 
     def _ssh(self, *args):
         with open(Path.cwd() / "ssh-addr", "r") as f:
