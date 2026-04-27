@@ -391,6 +391,7 @@ class FreeBSDVMImageTask(Task):
                         f"hostname={self.hostname}",
                         "ifconfig_vtnet0=SYNCDHCP",
                         "ifconfig_em0=SYNCDHCP",
+                        "ifconfig_re0=SYNCDHCP",
                         "defaultroute_delay=2",
                         "sshd_enable=YES",
                         "sshd_rsa_enable=NO",
