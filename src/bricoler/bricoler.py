@@ -842,6 +842,7 @@ class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
         metalog.add_symlink(symlink_dest='/usr/local/bin/clang', path_in_image='usr/bin/cc')
         metalog.add_symlink(symlink_dest='/usr/local/bin/ld.lld', path_in_image='usr/bin/ld')
         metalog.add_symlink(symlink_dest='/usr/local/bin/clang-cpp', path_in_image='usr/bin/cpp')
+        metalog.add_symlink(symlink_dest='/usr/local/bin/clang++', path_in_image='usr/bin/c++')
         return super().run(ctx)
 
 
