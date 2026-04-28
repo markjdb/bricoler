@@ -20,7 +20,7 @@ class Config:
     CONFIG_FILE_VERSION = 1
     config_path: Path
     files_dir: Path
-    max_jobs: int = len(os.sched_getaffinity(0))
+    max_jobs: int = os.cpu_count()
     parser: argparse.ArgumentParser
     skip: bool = False
     task_params: Dict[str, Dict[str, Any]] = {}
@@ -97,6 +97,7 @@ class Config:
         # Parse global arguments and the task name.
         opts, args = self.parser.parse_known_args()
 
+        self.max_jobs = opts.max_jobs
         self.skip = opts.skip
         self.workdir.mkdir(parents=True, exist_ok=True)
         self.config_path = Path(self.workdir / 'bricoler.json')
