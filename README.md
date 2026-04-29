@@ -37,6 +37,8 @@ If you use bash and have `bash-completion` installed, this will also install a c
 I find this very very useful.
 If you use a different shell, please try adding a completion script for it and submit a PR.
 
+Installing ccache is recommended, it will be used automatically.
+
 ## Usage
 
 Example:
