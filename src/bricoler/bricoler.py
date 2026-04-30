@@ -765,6 +765,10 @@ class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
         "net.inet.ip.fw.default_to_accept=1",
         "net.inet.ipf.jail_allowed=1",
         "net.fibs=8",
+        "security.mac.bsdextended.enabled=0",
+        "security.mac.ipacl.ipv4=0",
+        "security.mac.ipacl.ipv6=0",
+        "security.mac.portacl.enabled=0",
     ])
 
     packages = " ".join([
@@ -827,10 +831,6 @@ class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
         "vfs.aio.enable_unsafe=1",
         "kern.crypto.allow_soft=1",
         "vm.panic_on_oom=1",
-        "security.mac.bsdextended.enabled=0",
-        "security.mac.ipacl.ipv4=0",
-        "security.mac.ipacl.ipv6=0",
-        "security.mac.portacl.enabled=0",
     ])
 
     inputs = {
