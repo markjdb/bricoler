@@ -20,6 +20,8 @@ class Config:
     CONFIG_FILE_VERSION = 1
     config_path: Path
     files_dir: Path
+    mail_from: Optional[str] = None
+    mail_to: Optional[str] = None
     max_jobs: int = os.cpu_count()
     parser: argparse.ArgumentParser
     skip: bool = False
@@ -47,6 +49,14 @@ class Config:
             '-l', '--list',
             action='store_true',
             help=argparse.SUPPRESS)  # only really meant for completion handlers
+        parser.add_argument(
+            '--mail-from',
+            metavar='ADDR',
+            help='set the email address to send notifications from')
+        parser.add_argument(
+            '--mail-to',
+            metavar='ADDR',
+            help='set the email address to send notifications to')
         parser.add_argument(
             '-s', '--show',
             action='store_true',
@@ -97,6 +107,8 @@ class Config:
         # Parse global arguments and the task name.
         opts, args = self.parser.parse_known_args()
 
+        self.mail_from = opts.mail_from or self.config_file_object.get('mail_from')
+        self.mail_to = opts.mail_to or self.config_file_object.get('mail_to')
         self.max_jobs = opts.max_jobs
         self.skip = opts.skip
         self.workdir.mkdir(parents=True, exist_ok=True)
@@ -110,6 +122,8 @@ class Config:
             with self.config_path.open('w') as f:
                 json.dump({
                     "aliases": [],
+                    "mail_from": "",
+                    "mail_to": "",
                     "uuid": str(uuid.uuid4()),
                     "version": Config.CONFIG_FILE_VERSION,
                 }, fp=f, indent=4)

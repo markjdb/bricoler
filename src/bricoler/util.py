@@ -16,6 +16,33 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 
+class EmailReport:
+    def __init__(self, subject: str, body: str, attachments: List[Path] = []):
+        self.subject = subject
+        self.body = body
+        self.attachments = attachments
+
+    def send(self, mail_to: str, mail_from: str):
+        msg = (
+            f"From: {mail_from}\n"
+            f"To: {mail_to}\n"
+            f"Subject: {self.subject}\n"
+            f"\n"
+            f"{self.body}"
+        )
+
+        for attachment in self.attachments:
+            with attachment.open('rb') as f:
+                content = f.read()
+                msg += f"\n\nAttachment: {attachment.name}\n{content.decode(errors='replace')}"
+
+        subprocess.run(
+            ["sendmail", "-t", "-f", mail_from],
+            input=msg.encode(),
+            check=True,
+        )
+
+
 class ANSIColour(Enum):
     BLACK = 30,
     RED = 31,

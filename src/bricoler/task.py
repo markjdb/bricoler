@@ -412,7 +412,7 @@ class TaskSchedule:
                 if node != self.schedule:
                     node.task.skip = True
 
-    def run(self):
+    def run(self) -> Dict[str, Any]:
         self.config.lock()
         # Do any tasks have unbound required parameters?  Raise an error if so.
         # We check this here rather than in the constructor so that it's possible
@@ -432,7 +432,7 @@ class TaskSchedule:
 
         ctx = SimpleNamespace(max_jobs=self.config.max_jobs)
         with chdir(self.config.workdir):
-            self.schedule._run(ctx)
+            return self.schedule._run(ctx)
 
     def run_action(self, action_name: str, action_args: List[str]):
         task = self.schedule.task

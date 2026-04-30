@@ -23,7 +23,7 @@ from .config import Config
 from .git import GitRepository
 from .mtree import MtreeFile
 from .task import Task, TaskParameter, TaskMeta, TaskSchedule
-from .util import chdir, host_machine, info, run_cmd, warn
+from .util import EmailReport, chdir, host_machine, info, run_cmd, warn
 from .vm import FreeBSDVM, VMImage, VMHypervisor, BhyveRun, QEMURun, RVVMRun, SSHCommandRunner
 
 
@@ -1735,5 +1735,10 @@ def main() -> int:
     elif action is not None:
         sched.run_action(action[0], action[1:])
     else:
-        sched.run()
+        outputs = sched.run()
+        for val in outputs.values():
+            if isinstance(val, EmailReport):
+                if config.mail_to is not None and config.mail_from is not None:
+                    val.send(config.mail_to, config.mail_from)
+
     return 0
