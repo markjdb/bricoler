@@ -8,6 +8,7 @@ import functools
 import glob
 import json
 import os
+import pysqlite3
 import re
 import shutil
 import sys
@@ -24,6 +25,50 @@ from .mtree import MtreeFile
 from .task import Task, TaskParameter, TaskMeta, TaskSchedule
 from .util import chdir, host_machine, info, run_cmd, warn
 from .vm import FreeBSDVM, VMImage, VMHypervisor, BhyveRun, QEMURun, RVVMRun, SSHCommandRunner
+
+
+class KyuaDB:
+    SCHEMA_VERSION = 3
+
+    class Result(Enum):
+        PASSED = 'passed'
+        FAILED = 'failed'
+        SKIPPED = 'skipped'
+        BROKEN = 'broken'
+
+    def __init__(self, path: Path):
+        self.path = path
+        self.conn = pysqlite3.connect(path)
+
+        res = self.conn.execute("SELECT schema_version from metadata").fetchone()
+        if res is None:
+            raise ValueError(f"KyuaDB: No schema_version found in {path}")
+        if res[0] != self.SCHEMA_VERSION:
+            raise ValueError(f"KyuaDB: Unsupported schema_version {res[0]} in {path}")
+
+    def _results(self, restype: Result) -> List[str]:
+        cursor = self.conn.cursor()
+        cursor.execute(f"""
+            SELECT tp.relative_path, tc.name
+            FROM test_results tr
+            JOIN test_cases tc ON tr.test_case_id = tc.test_case_id
+            JOIN test_programs tp ON tc.test_program_id = tp.test_program_id
+            WHERE tr.result_type = '{restype.value}'
+        """)
+        results = cursor.fetchall()
+        return [f"{row[0]}:{row[1]}" for row in results]
+
+    def passed(self) -> List[str]:
+        return self._results(self.Result.PASSED)
+
+    def failed(self) -> List[str]:
+        return self._results(self.Result.FAILED)
+
+    def skipped(self) -> List[str]:
+        return self._results(self.Result.SKIPPED)
+
+    def broken(self) -> List[str]:
+        return self._results(self.Result.BROKEN)
 
 
 class FreeBSDSrcRepository(GitRepository):

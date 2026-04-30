@@ -23,7 +23,8 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-  "pexpect"
+  "pexpect",
+  "pysqlite3",
 ]
 
 [project.scripts]
