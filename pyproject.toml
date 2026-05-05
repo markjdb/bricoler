@@ -24,7 +24,6 @@ classifiers = [
 ]
 dependencies = [
   "pexpect",
-  "pysqlite3",
 ]
 
 [project.scripts]
