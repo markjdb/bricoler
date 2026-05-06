@@ -30,7 +30,7 @@ class GitRepository:
         branch: str | None = None,
         shallow: bool = True,
         no_cmds: bool = False,
-    ):
+    ) -> None:
         self.url = url
         self.branch = branch
         self._no_cmds = no_cmds
@@ -58,7 +58,7 @@ class GitRepository:
         output = self.git(["rev-parse", "--is-shallow-repository"], capture_output=True)
         return output.stdout.decode().strip() == "true"
 
-    def clone(self, shallow=True):
+    def clone(self, shallow=True) -> None:
         if not (self.path / ".git").exists():
             if self.external:
                 raise ValueError(
@@ -72,7 +72,7 @@ class GitRepository:
             cmd += [self.url, str(self.path.resolve())]
             run_cmd(cmd)
 
-    def update(self, shallow=True):
+    def update(self, shallow=True) -> None:
         assert self.path is not None
         if self.external:
             # This repository is externally managed.

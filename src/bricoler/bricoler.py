@@ -45,7 +45,7 @@ class KyuaDB:
         SKIPPED = "skipped"
         BROKEN = "broken"
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path) -> None:
         self.path = path
         self.conn = sqlite3.connect(path)
 
@@ -720,7 +720,7 @@ class FreeBSDVMBootTask(Task):
     }
 
     outputs = {
-        "vm": Optional[FreeBSDVM],
+        "vm": FreeBSDVM | None,
     }
 
     def run(self, ctx):
@@ -764,7 +764,7 @@ class FreeBSDVMBootTask(Task):
 
         return {"vm": vm}
 
-    def _gdb(self, *args):
+    def _gdb(self, *args) -> None:
         if shutil.which("gdb") is None:
             raise ValueError("gdb is not available")
         sysroot = Path(os.readlink(Path.cwd() / "sysroot"))
@@ -782,7 +782,7 @@ class FreeBSDVMBootTask(Task):
         gdb_cmd += args
         self.run_cmd(gdb_cmd, process_group=0)
 
-    def _ssh(self, *args):
+    def _ssh(self, *args) -> None:
         with open(Path.cwd() / "ssh-addr") as f:
             addr = f.read().strip()
         (host, portstr) = addr.split(":", maxsplit=1)
@@ -977,7 +977,7 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
             "report_txt_path": report_txt_path,
         }
 
-    def _report(self, *args):
+    def _report(self, *args) -> None:
         self.run_cmd(["less", Path.cwd() / "kyua-report.txt"])
 
     actions = {
@@ -1145,7 +1145,7 @@ class EC2Provider:
     config: Config
     ssh_key_dir: Path
 
-    def __init__(self, config: Config, region: str):
+    def __init__(self, config: Config, region: str) -> None:
         # Lazy import since this takes a bit of time (~130ms on a Zen 4).
         try:
             import boto3
@@ -1225,7 +1225,7 @@ class EC2Provider:
             time.sleep(5)
         raise TimeoutError(f"Instance not ready after {timeout} seconds")
 
-    def clean(self, tag_value: str = "*"):
+    def clean(self, tag_value: str = "*") -> None:
         filters = [
             {"Name": "tag:bricoler", "Values": [tag_value]},
         ]
@@ -1715,7 +1715,7 @@ class SyzkallerFuzzFreeBSDTask(Task):
         "vm_image": SyzkallerFuzzFreeBSDVMImageTask,
     }
 
-    def run(self, ctx):
+    def run(self, ctx) -> None:
         hypervisor_args = {}
         image_path = None
         if self.hypervisor == VMHypervisor.BHYVE:

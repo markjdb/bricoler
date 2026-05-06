@@ -18,12 +18,12 @@ from pathlib import Path
 
 
 class EmailReport:
-    def __init__(self, subject: str, body: str, attachments: list[Path] = []):
+    def __init__(self, subject: str, body: str, attachments: list[Path] | None = None) -> None:
         self.subject = subject
         self.body = body
-        self.attachments = attachments
+        self.attachments = attachments or []
 
-    def send(self, mail_to: str, mail_from: str):
+    def send(self, mail_to: str, mail_from: str) -> None:
         msg = (
             f"From: {mail_from}\n"
             f"To: {mail_to}\n"
@@ -60,10 +60,10 @@ def colour(text: str, colour: ANSIColour) -> str:
 
 
 @contextmanager
-def chdir(dir: Path, **kwargs):
+def chdir(path: Path, **kwargs):
     old_dir = Path.cwd()
-    dir.mkdir(parents=True, exist_ok=True, **kwargs)
-    os.chdir(dir)
+    path.mkdir(parents=True, exist_ok=True, **kwargs)
+    os.chdir(path)
     try:
         yield
     finally:
@@ -135,11 +135,11 @@ def run_cmd(
     return result
 
 
-def info(message: str):
+def info(message: str) -> None:
     print(colour("INFO", ANSIColour.GREEN) + f": {message}")
 
 
-def warn(message: str):
+def warn(message: str) -> None:
     print(colour("WARN", ANSIColour.YELLOW) + f": {message}", file=sys.stderr)
 
 

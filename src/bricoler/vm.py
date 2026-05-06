@@ -20,12 +20,12 @@ from .util import run_cmd, unused_tcp_addr
 
 
 class SSHCommandRunner:
-    def __init__(self, addr: tuple[str, str | int], key: Path):
+    def __init__(self, addr: tuple[str, str | int], key: Path) -> None:
         self.addr = addr[0]
         self.port = addr[1]
         self.key = key
 
-    def run_cmd(self, cmd: list[str] = []):
+    def run_cmd(self, cmd: list[str] = []) -> None:
         ssh_cmd = [
             "ssh",
             "-o", "UserKnownHostsFile=/dev/null",
@@ -36,7 +36,7 @@ class SSHCommandRunner:
         ] + cmd
         run_cmd(ssh_cmd, check_result=True)
 
-    def scp_from(self, src: Path, dst: Path):
+    def scp_from(self, src: Path, dst: Path) -> None:
         scp_cmd = [
             "scp",
             "-r",
@@ -51,7 +51,7 @@ class SSHCommandRunner:
 
 
 class VMImage:
-    def __init__(self, path: Path, machine: str):
+    def __init__(self, path: Path, machine: str) -> None:
         self.path = path
         self.machine = machine
 
@@ -91,7 +91,7 @@ class VMRun:
         nic_driver: NetworkDriver = NetworkDriver.VIRTIO,
         p9_shares: list[tuple[str, Path]] = [],
         ssh_key: Path | None = None,
-    ):
+    ) -> None:
         self.image = image
         self.extra_disks = extra_disks
         self.memory = memory
@@ -143,7 +143,7 @@ class BhyveRun(VMRun):
         usage = run_cmd(["bhyve", "--help"], capture_output=True, check_result=False, text=True)
         return "-M: monitor mode" in usage.stderr
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         if self.image.machine.split("/")[0] not in ("amd64", "arm64", "i386"):
             raise ValueError(
@@ -189,7 +189,7 @@ class BhyveRun(VMRun):
 
         devindex = 0
 
-        def add_device(desc):
+        def add_device(desc) -> None:
             nonlocal devindex
             bhyve_cmd.extend(["-s", f"{devindex}:0,{desc}"])
             devindex += 1
@@ -350,26 +350,26 @@ class FreeBSDVM:
             cpuid: int,
             backtrace: str,
             message: str | None = "VM panicked",
-        ):
+        ) -> None:
             self.panicstr = panicstr
             self.cpuid = cpuid
             self.backtrace = backtrace
             super().__init__(f"{message}: {panicstr}")
 
     class _Tee:
-        def __init__(self, *files):
+        def __init__(self, *files) -> None:
             self.files = files
 
-        def write(self, data):
+        def write(self, data) -> None:
             for f in self.files:
                 f.write(data)
                 f.flush()
 
-        def flush(self):
+        def flush(self) -> None:
             for f in self.files:
                 f.flush()
 
-    def __init__(self, vmrun: VMRun, logfiles=[sys.stdout.buffer]):
+    def __init__(self, vmrun: VMRun, logfiles=[sys.stdout.buffer]) -> None:
         self.vmrun = vmrun
         self.cmd = vmrun.setup()
         self.logfile = FreeBSDVM._Tee(*logfiles)
@@ -405,16 +405,16 @@ class FreeBSDVM:
             raise self.PanicException(panicstr, cpuid, backtrace)
         return pattern
 
-    def sendline(self, line: str):
+    def sendline(self, line: str) -> None:
         self.proc.sendline(line)
 
-    def sendcmd(self, args: list[str]):
+    def sendcmd(self, args: list[str]) -> None:
         """Split a long command into multiple lines to avoid hitting buffer limits."""
         for arg in args[:-1]:
             self.proc.send(arg + " \\\n")
         self.proc.sendline(args[-1])
 
-    def boot_to_login(self):
+    def boot_to_login(self) -> None:
         self.proc = pexpect.spawn(
             self.cmd[0],
             self.cmd[1:],
@@ -428,9 +428,9 @@ class FreeBSDVM:
             e.args = (f"VM panicked during boot: {e.panicstr}",)
             raise e
 
-    def wait_for_prompt(self, **kwargs):
+    def wait_for_prompt(self, **kwargs) -> None:
         self.expect("root@.*#", **kwargs)
 
-    def poweroff(self):
+    def poweroff(self) -> None:
         self.sendline("poweroff")
         self.proc.expect(pexpect.EOF, timeout=120)

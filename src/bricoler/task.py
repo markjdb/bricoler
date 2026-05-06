@@ -168,7 +168,7 @@ class TaskParameter:
         default: Any = None,
         choices: list[Any] | None = None,
         required: bool = False,
-    ):
+    ) -> None:
         self.description = description
         self.type = type
         self.default = default
@@ -186,7 +186,7 @@ class TaskParameter:
             self.type = str
         self._initialized = True
 
-    def __setattr__(self, key, value):
+    def __setattr__(self, key, value) -> None:
         if self._initialized:
             # These objects are immutable after instantiation.
             raise AttributeError(f"Cannot modify attribute '{key}' of TaskParameter")
@@ -224,7 +224,7 @@ class TaskParameterBinding:
         COMMAND_LINE = 2,
         OVERRIDDEN = 3,
 
-    def __init__(self, value, source: BindingType, task=None):
+    def __init__(self, value, source: BindingType, task=None) -> None:
         self.value = value
         self.source = source
         self.task = task
@@ -249,7 +249,7 @@ class Task(ABC, metaclass=TaskMeta):
     _final_outputs: dict[str, Any] | None = None
     _finished: bool
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config) -> None:
         super().__init__()
         self.bindings = {}
         self.config = config
@@ -342,7 +342,7 @@ class TaskSchedule:
         task: Task
         children: dict[str, TaskSchedule.TaskScheduleNode]
 
-        def __init__(self, task: type[Task], config: Config):
+        def __init__(self, task: type[Task], config: Config) -> None:
             self.task = task(config)
             self.children = {}
             for name, input in task._chained_inputs.items():
@@ -365,7 +365,7 @@ class TaskSchedule:
     config: Config
     schedule: TaskScheduleNode
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config) -> None:
         self.config = config
         self.schedule = self.TaskScheduleNode(config.task, config)
 
@@ -435,7 +435,7 @@ class TaskSchedule:
         with chdir(self.config.workdir):
             return self.schedule._run(ctx)
 
-    def run_action(self, action_name: str, action_args: list[str]):
+    def run_action(self, action_name: str, action_args: list[str]) -> None:
         task = self.schedule.task
         if action_name not in task._chained_actions:
             available = ", ".join(task._chained_actions.keys())
@@ -450,7 +450,7 @@ class TaskSchedule:
         """Return a mapping of parameter names to their values in the schedule."""
         result: dict[str, Any] = {}
 
-        def _collect(node: TaskSchedule.TaskScheduleNode):
+        def _collect(node: TaskSchedule.TaskScheduleNode) -> None:
             for name in node.task._chained_parameters.keys():
                 val = node.task.bindings.get(name, None)
                 result[f"{node.task.name}/{name}"] = (
@@ -468,7 +468,7 @@ class TaskSchedule:
         """Return a mapping of task names to task instances in the schedule."""
         result: dict[str, Task] = {}
 
-        def _collect(node: TaskSchedule.TaskScheduleNode):
+        def _collect(node: TaskSchedule.TaskScheduleNode) -> None:
             result[node.task.name] = node.task
             for child in node.children.values():
                 _collect(child)

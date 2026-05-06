@@ -31,7 +31,7 @@ class Config:
     workdir: Path
     uuid: uuid.UUID
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.files_dir = Path(sys.argv[0]).parent.resolve() / "files"
         self.workdir = Path(os.environ.get("BRICOLER_WORKDIR",
                                            Path.home() / "bricoler")).resolve()
@@ -82,7 +82,7 @@ class Config:
     def aliases(self) -> list[dict[str, Any]]:
         return self.config_file_object["aliases"]
 
-    def add_alias(self, name: str):
+    def add_alias(self, name: str) -> None:
         # Remove an existing alias.  Perhaps we should rename it instead?
         self.config_file_object["aliases"] = [
             a for a in self.config_file_object["aliases"] if a["alias"] != name
@@ -205,7 +205,7 @@ class Config:
 
         return (opts, action)
 
-    def lock(self):
+    def lock(self) -> None:
         # Lock the configuration file to prevent concurrent modifications.
         try:
             self._locked_file = self.config_path.open("r+")

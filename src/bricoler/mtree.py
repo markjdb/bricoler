@@ -24,7 +24,7 @@ from .util import warn
 
 
 class MtreePath(PurePosixPath):
-    def __str__(self):
+    def __str__(self) -> str:
         pathstr = super().__str__()
         if pathstr != ".":
             pathstr = "./" + pathstr
@@ -32,7 +32,7 @@ class MtreePath(PurePosixPath):
 
 
 class MtreeEntry:
-    def __init__(self, path: MtreePath, attributes: dict[str, str]):
+    def __init__(self, path: MtreePath, attributes: dict[str, str]) -> None:
         self.path = path
         self.attributes = attributes
 
@@ -113,7 +113,7 @@ class MtreeSubtree(collections.abc.MutableMapping):
             return self.entry
         return self.children[split[0]][split[1]]
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         split = self._split_key(key)
         if split is None:
             self.entry = value
@@ -122,7 +122,7 @@ class MtreeSubtree(collections.abc.MutableMapping):
             self.children[split[0]] = MtreeSubtree()
         self.children[split[0]][split[1]] = value
 
-    def __delitem__(self, key):
+    def __delitem__(self, key) -> None:
         split = self._split_key(key)
         if split is None:
             if self.entry is None:
@@ -138,7 +138,7 @@ class MtreeSubtree(collections.abc.MutableMapping):
             for k2 in v:
                 yield MtreePath(k, k2)
 
-    def __len__(self):
+    def __len__(self) -> int:
         ret = int(self.entry is not None)
         for c in self.children.values():
             ret += len(c)
@@ -194,12 +194,12 @@ class MtreeSubtree(collections.abc.MutableMapping):
 
 
 class MtreeFile:
-    def __init__(self, file: Path | None = None, contents_root: Path | None = None):
+    def __init__(self, file: Path | None = None, contents_root: Path | None = None) -> None:
         self._mtree = MtreeSubtree()
         if file:
             self.load(file, contents_root=contents_root, append=False)
 
-    def load(self, file: Path, append: bool, contents_root: Path | None = None):
+    def load(self, file: Path, append: bool, contents_root: Path | None = None) -> None:
         with file.open("r") as f:
             if not append:
                 self._mtree.clear()
@@ -252,7 +252,7 @@ class MtreeFile:
         gname="wheel",
         parent_dir_mode=None,
         symlink_dest: str | None = None,
-    ):
+    ) -> None:
         if isinstance(path_in_image, PurePath):
             path_in_image = str(path_in_image)
         assert not path_in_image.startswith("/")
@@ -306,7 +306,7 @@ class MtreeFile:
         symlink_dest=None,
         path_in_image: str,
         **kwargs,
-    ):
+    ) -> None:
         if src_symlink is not None:
             assert symlink_dest is None
             self.add_file(src_symlink, path_in_image, **kwargs)
@@ -343,7 +343,7 @@ class MtreeFile:
         entry = MtreeEntry(mtree_path, attribs)
         self._mtree[mtree_path] = entry
 
-    def add_from_mtree(self, mtree_file: MtreeFile, path: PurePath | str):
+    def add_from_mtree(self, mtree_file: MtreeFile, path: PurePath | str) -> None:
         if isinstance(path, PurePath):
             path = str(path)
         assert not path.startswith("/")
@@ -393,7 +393,7 @@ class MtreeFile:
 
         return "<MTREE: " + pprint.pformat(self._mtree) + ">"
 
-    def write(self, output: Path):
+    def write(self, output: Path) -> None:
         with output.open("w", encoding="utf-8") as f:
             f.write("#mtree 2.0\n")
             for path in sorted(self._mtree.keys()):
