@@ -8,9 +8,9 @@ import functools
 import glob
 import json
 import os
-import pysqlite3
 import re
 import shutil
+import sqlite3
 import sys
 import textwrap
 import time
@@ -38,7 +38,7 @@ class KyuaDB:
 
     def __init__(self, path: Path):
         self.path = path
-        self.conn = pysqlite3.connect(path)
+        self.conn = sqlite3.connect(path)
 
         res = self.conn.execute("SELECT schema_version from metadata").fetchone()
         if res is None:

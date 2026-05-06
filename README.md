@@ -20,7 +20,7 @@ The basic idea is to simplify common src development tasks by provding a framewo
 Make sure that python 3 and hatch are installed:
 
 ```
-$ pkg install python3 py311-hatch
+$ pkg install python3 py311-hatch py311-sqlite3
 ```
 
 Run `hatch build` from the root of the repository.
