@@ -4,6 +4,8 @@
 # SPDX-License-Identifier: BSD-2-Clause
 #
 
+from __future__ import annotations
+
 import functools
 import os
 import sys
@@ -11,20 +13,19 @@ import uuid
 from abc import abstractmethod
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
-
-from .util import run_cmd, unused_tcp_addr
 
 import pexpect
 
+from .util import run_cmd, unused_tcp_addr
+
 
 class SSHCommandRunner:
-    def __init__(self, addr: Tuple[str, Union[str, int]], key: Path):
+    def __init__(self, addr: tuple[str, str | int], key: Path):
         self.addr = addr[0]
         self.port = addr[1]
         self.key = key
 
-    def run_cmd(self, cmd: List[str] = []):
+    def run_cmd(self, cmd: list[str] = []):
         ssh_cmd = [
             "ssh",
             "-o", "UserKnownHostsFile=/dev/null",
@@ -54,19 +55,19 @@ class VMImage:
         self.path = path
         self.machine = machine
 
-    def select(self, d: Dict[str, str], default=None) -> str:
+    def select(self, d: dict[str, str], default=None) -> str:
         val = d.get(self.machine)
         if val is None:
-            val = d.get(self.machine.split('/', maxsplit=1)[0])
+            val = d.get(self.machine.split("/", maxsplit=1)[0])
             if val is None:
                 return default
         return val
 
 
 class VMHypervisor(Enum):
-    BHYVE = 'bhyve'
-    QEMU = 'qemu'
-    RVVM = 'rvvm'
+    BHYVE = "bhyve"
+    QEMU = "qemu"
+    RVVM = "rvvm"
 
 
 class VMRun:
@@ -83,13 +84,13 @@ class VMRun:
     def __init__(
         self,
         image: VMImage,
-        extra_disks: List[str] = [],
+        extra_disks: list[str] = [],
         memory: int = 2048,
         ncpus: int = 2,
         block_driver: BlockDriver = BlockDriver.VIRTIO,
         nic_driver: NetworkDriver = NetworkDriver.VIRTIO,
-        p9_shares: List[Tuple[str, Path]] = [],
-        ssh_key: Optional[Path] = None,
+        p9_shares: list[tuple[str, Path]] = [],
+        ssh_key: Path | None = None,
     ):
         self.image = image
         self.extra_disks = extra_disks
@@ -103,10 +104,10 @@ class VMRun:
         self.ssh_addr = unused_tcp_addr()
 
     @abstractmethod
-    def setup(self) -> List[Any]: ...
+    def setup(self) -> list: ...
 
     @abstractmethod
-    def ssh_addr(self) -> Tuple[str, int]: ...
+    def ssh_addr(self) -> tuple[str, int]: ...
 
     def ssh_handle(self):
         return SSHCommandRunner(self.ssh_addr, self.ssh_key)
@@ -144,25 +145,25 @@ class BhyveRun(VMRun):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if self.image.machine.split('/')[0] not in ('amd64', 'arm64', 'i386'):
+        if self.image.machine.split("/")[0] not in ("amd64", "arm64", "i386"):
             raise ValueError(
-                f"bhyve does not support machine type '{self.image.machine}'"
+                f"bhyve does not support machine type '{self.image.machine}'",
             )
 
     def block_driver_name(self) -> str:
         driver = self.block_driver
         if driver == VMRun.BlockDriver.VIRTIO:
             return "virtio-blk"
-        elif driver == VMRun.BlockDriver.AHCI:
+        if driver == VMRun.BlockDriver.AHCI:
             return "ahci-hd"
-        elif driver == VMRun.BlockDriver.NVME:
+        if driver == VMRun.BlockDriver.NVME:
             return "nvme"
 
     def bootrom_path(self) -> Path:
         return self.image.select({
-            'amd64': Path('/usr/local/share/uefi-firmware/BHYVE_UEFI.fd'),
-            'arm64': Path('/usr/local/share/u-boot/u-boot-bhyve-arm64/u-boot.bin'),
-            'i386': Path('/usr/local/share/uefi-firmware/BHYVE_UEFI_32.fd'),
+            "amd64": Path("/usr/local/share/uefi-firmware/BHYVE_UEFI.fd"),
+            "arm64": Path("/usr/local/share/u-boot/u-boot-bhyve-arm64/u-boot.bin"),
+            "i386": Path("/usr/local/share/uefi-firmware/BHYVE_UEFI_32.fd"),
         })
 
     def network_driver_name(self) -> str:
@@ -171,7 +172,7 @@ class BhyveRun(VMRun):
             case VMRun.NetworkDriver.E1000: return "e1000"
         raise ValueError(f"Unsupported network driver {driver} is not supported by bhyve")
 
-    def setup(self) -> List[Any]:
+    def setup(self) -> list:
         if BhyveRun.has_monitor_mode():
             vmname = f"bricoler-{uuid.uuid4()}"
         else:
@@ -195,7 +196,7 @@ class BhyveRun(VMRun):
         add_device("hostbridge")
 
         bootrom = self.bootrom_path()
-        if self.image.machine.startswith('amd64/') or self.image.machine.startswith('i386/'):
+        if self.image.machine.startswith("amd64/") or self.image.machine.startswith("i386/"):
             bhyve_cmd.extend([
                 "-H",
                 "-l", "com1,stdio",
@@ -207,7 +208,7 @@ class BhyveRun(VMRun):
         else:
             bhyve_cmd.extend([
                 "-o", "console=stdio",
-                "-o", f"bootrom,{bootrom}"
+                "-o", f"bootrom,{bootrom}",
             ])
         add_device(f"{self.block_driver_name()},{self.image.path}")
         for disk in self.extra_disks:
@@ -223,7 +224,7 @@ class BhyveRun(VMRun):
 
 
 class RVVMRun(VMRun):
-    def setup(self) -> List[str]:
+    def setup(self) -> list[str]:
         rvvm_cmd = [
             "rvvm",
             "/usr/local/share/RVVM/fw_payload.bin",
@@ -244,64 +245,62 @@ class RVVMRun(VMRun):
         return rvvm_cmd
 
 class QEMURun(VMRun):
-    def bios_path(self) -> Optional[Path]:
+    def bios_path(self) -> Path | None:
         return self.image.select({
             # XXX-MJ add some dict type which automatically checks for the path
             #        and suggests some recourse if it's not available
-            'amd64': Path("/usr/local/share/edk2-qemu/QEMU_UEFI-x86_64.fd"),
-            'arm': Path("/usr/local/share/u-boot/u-boot-qemu-arm/u-boot.bin"),
-            'arm64': Path("/usr/local/share/qemu/edk2-aarch64-code.fd"),
-            'riscv': Path("/usr/local/share/opensbi/lp64/generic/firmware/fw_jump.elf"),
+            "amd64": Path("/usr/local/share/edk2-qemu/QEMU_UEFI-x86_64.fd"),
+            "arm": Path("/usr/local/share/u-boot/u-boot-qemu-arm/u-boot.bin"),
+            "arm64": Path("/usr/local/share/qemu/edk2-aarch64-code.fd"),
+            "riscv": Path("/usr/local/share/opensbi/lp64/generic/firmware/fw_jump.elf"),
         })
 
-    def kernel_path(self) -> Optional[Path]:
+    def kernel_path(self) -> Path | None:
         kernels = {
             # XXX-MJ add some dict type which automatically checks for the path
             #        and suggests some recourse if it's not available
-            'riscv': Path("/usr/local/share/u-boot/u-boot-qemu-riscv64/u-boot.bin"),
+            "riscv": Path("/usr/local/share/u-boot/u-boot-qemu-riscv64/u-boot.bin"),
         }
-        return kernels.get(self.image.machine.split('/', maxsplit=1)[0], None)
+        return kernels.get(self.image.machine.split("/", maxsplit=1)[0])
 
     def block_driver_name(self) -> str:
         driver = self.block_driver
         if driver == VMRun.BlockDriver.VIRTIO:
             return "virtio-blk-pci"
-        else:
-            raise ValueError(
-                f"Unsupported block driver {driver} is not supported by QEMU"
-            )
+        raise ValueError(
+            f"Unsupported block driver {driver} is not supported by QEMU",
+        )
 
     def nic_driver_name(self) -> str:
         driver = self.nic_driver
         if driver == VMRun.NetworkDriver.VIRTIO:
             return "virtio-net-pci"
-        else:
-            raise ValueError(
-                f"Unsupported network driver {driver} is not supported by QEMU"
-            )
+        raise ValueError(
+            f"Unsupported network driver {driver} is not supported by QEMU",
+        )
 
     def machine_type(self) -> str:
         return self.image.select({
-            'amd64': "q35",
-            'arm64': "virt,gic-version=3",
+            "amd64": "q35",
+            "arm64": "virt,gic-version=3",
         }, "virt")
 
-    def setup(self) -> List[Any]:
+    def setup(self) -> list:
         exe = self.image.select({
-            'amd64': 'qemu-system-x86_64',
-            'i386': 'qemu-system-i386',
-            'arm': 'qemu-system-arm',
-            'arm64': 'qemu-system-aarch64',
-            'arm64/aarch64c': 'qemu-system-morello',
-            'riscv': 'qemu-system-riscv64',
+            "amd64": "qemu-system-x86_64",
+            "i386": "qemu-system-i386",
+            "arm": "qemu-system-arm",
+            "arm64": "qemu-system-aarch64",
+            "arm64/aarch64c": "qemu-system-morello",
+            "riscv": "qemu-system-riscv64",
         })
         if exe is None:
             raise ValueError(
-                f"qemu does not support machine type '{self.image.machine}'"
+                f"qemu does not support machine type '{self.image.machine}'",
             )
 
         cpu = self.image.select({
-            'arm64/aarch64c': "morello"
+            "arm64/aarch64c": "morello",
         }, "max")
 
         qemu_cmd = [
@@ -350,7 +349,7 @@ class FreeBSDVM:
             panicstr: str,
             cpuid: int,
             backtrace: str,
-            message: Optional[str] = "VM panicked",
+            message: str | None = "VM panicked",
         ):
             self.panicstr = panicstr
             self.cpuid = cpuid
@@ -386,7 +385,7 @@ class FreeBSDVM:
             # Collect the panic string, CPU ID and backtrace.
             panicstr = self.proc.match.group("panic").strip().decode()
             self.proc.expect(r"cpuid\s*=\s*(?P<cpuid>\d+)\s*\r?\n")
-            cpuid = int(self.proc.match.group('cpuid'))
+            cpuid = int(self.proc.match.group("cpuid"))
             self.proc.expect(r"KDB:\s+stack backtrace:\s*\r?\n")
             backtrace_lines = []
             while True:
@@ -397,9 +396,8 @@ class FreeBSDVM:
 
                 if idx == 0:
                     break
-                else:
-                    line = self.proc.match.group(1).decode()
-                    backtrace_lines.append(line)
+                line = self.proc.match.group(1).decode()
+                backtrace_lines.append(line)
 
             # We could potentially symbolize the backtrace using addr2line,
             # or attach a debugger and get full output.
@@ -410,7 +408,7 @@ class FreeBSDVM:
     def sendline(self, line: str):
         self.proc.sendline(line)
 
-    def sendcmd(self, args: List[str]):
+    def sendcmd(self, args: list[str]):
         """Split a long command into multiple lines to avoid hitting buffer limits."""
         for arg in args[:-1]:
             self.proc.send(arg + " \\\n")

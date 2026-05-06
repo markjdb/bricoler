@@ -9,14 +9,17 @@
 # SPDX-License-Identifier: BSD-2-Clause
 #
 
+from __future__ import annotations
+
 import collections.abc
 import fnmatch
 import os
 import shlex
 import stat
 from collections import OrderedDict
+from collections.abc import Iterator
 from pathlib import Path, PurePath, PurePosixPath
-from typing import Dict, Iterator, List, Optional, Union
+
 from .util import warn
 
 
@@ -29,7 +32,7 @@ class MtreePath(PurePosixPath):
 
 
 class MtreeEntry:
-    def __init__(self, path: MtreePath, attributes: Dict[str, str]):
+    def __init__(self, path: MtreePath, attributes: dict[str, str]):
         self.path = path
         self.attributes = attributes
 
@@ -40,7 +43,7 @@ class MtreeEntry:
         return self.attributes.get("type") == "file"
 
     @classmethod
-    def parse(cls, line: str, contents_root: Optional[Path] = None) -> "MtreeEntry":
+    def parse(cls, line: str, contents_root: Path | None = None) -> MtreeEntry:
         elements = shlex.split(line)
         tmppath = elements[0]
         # Ensure that the path is normalized:
@@ -58,7 +61,7 @@ class MtreeEntry:
         # FIXME: use contents=
 
     @classmethod
-    def parse_all_dirs_in_mtree(cls, mtree_file: Path) -> List["MtreeEntry"]:
+    def parse_all_dirs_in_mtree(cls, mtree_file: Path) -> list[MtreeEntry]:
         with mtree_file.open("r", encoding="utf-8") as f:
             result = []
             for line in f.readlines():
@@ -86,8 +89,8 @@ class MtreeEntry:
 
 class MtreeSubtree(collections.abc.MutableMapping):
     def __init__(self) -> None:
-        self.entry: Optional[MtreeEntry] = None
-        self.children: Dict[str, "MtreeSubtree"] = OrderedDict()
+        self.entry: MtreeEntry | None = None
+        self.children: dict[str, MtreeSubtree] = OrderedDict()
 
     @staticmethod
     def _split_key(key):
@@ -141,7 +144,7 @@ class MtreeSubtree(collections.abc.MutableMapping):
             ret += len(c)
         return ret
 
-    def _glob(self, patfrags: "list[str]", prefix: MtreePath, *, case_sensitive=False) -> Iterator[MtreePath]:
+    def _glob(self, patfrags: list[str], prefix: MtreePath, *, case_sensitive=False) -> Iterator[MtreePath]:
         if len(patfrags) == 0:
             if self.entry is not None:
                 yield prefix
@@ -167,7 +170,7 @@ class MtreeSubtree(collections.abc.MutableMapping):
             patfrags.insert(0, tail)
         return self._glob(patfrags, MtreePath(), case_sensitive=case_sensitive)
 
-    def _walk(self, top, prefix) -> Iterator[tuple[MtreePath, List[str], List[str]]]:
+    def _walk(self, top, prefix) -> Iterator[tuple[MtreePath, list[str], list[str]]]:
         split = self._split_key(top)
         if split is not None:
             if split[0] in self.children:
@@ -175,8 +178,8 @@ class MtreeSubtree(collections.abc.MutableMapping):
             return
         if self.entry is not None and self.entry.attributes["type"] != "dir":
             return
-        files: "list[tuple[str, MtreeSubtree]]" = []
-        dirs: "list[tuple[str, MtreeSubtree]]" = []
+        files: list[tuple[str, MtreeSubtree]] = []
+        dirs: list[tuple[str, MtreeSubtree]] = []
         for k, v in self.children.items():
             if v.entry is not None and v.entry.attributes["type"] != "dir":
                 files.append((k, v))
@@ -186,17 +189,17 @@ class MtreeSubtree(collections.abc.MutableMapping):
         for _, v in dirs:
             yield from v._walk(MtreePath(), prefix)
 
-    def walk(self, top) -> "Iterator[tuple[MtreePath, list[str], list[str]]]":
+    def walk(self, top) -> Iterator[tuple[MtreePath, list[str], list[str]]]:
         return self._walk(top, MtreePath())
 
 
 class MtreeFile:
-    def __init__(self, file: Optional[Path] = None, contents_root: Optional[Path] = None):
+    def __init__(self, file: Path | None = None, contents_root: Path | None = None):
         self._mtree = MtreeSubtree()
         if file:
             self.load(file, contents_root=contents_root, append=False)
 
-    def load(self, file: Path, append: bool, contents_root: Optional[Path] = None):
+    def load(self, file: Path, append: bool, contents_root: Path | None = None):
         with file.open("r") as f:
             if not append:
                 self._mtree.clear()
@@ -213,7 +216,7 @@ class MtreeFile:
                 self._mtree[key] = entry
 
     @staticmethod
-    def _ensure_mtree_mode_fmt(mode: Union[str, int]) -> str:
+    def _ensure_mtree_mode_fmt(mode: str | int) -> str:
         if not isinstance(mode, str):
             mode = "0" + oct(mode)[2:]
         assert mode.startswith("0")
@@ -242,13 +245,13 @@ class MtreeFile:
 
     def add_file(
         self,
-        file: Optional[Path],
+        file: Path | None,
         path_in_image,
         mode=None,
         uname="root",
         gname="wheel",
         parent_dir_mode=None,
-        symlink_dest: Optional[str] = None,
+        symlink_dest: str | None = None,
     ):
         if isinstance(path_in_image, PurePath):
             path_in_image = str(path_in_image)
@@ -291,7 +294,7 @@ class MtreeFile:
             ("uname", uname),
             ("gname", gname),
             ("mode", mode),
-            last_attrib
+            last_attrib,
         ])
         entry = MtreeEntry(mtree_path, attribs)
         self._mtree[mtree_path] = entry
@@ -299,10 +302,10 @@ class MtreeFile:
     def add_symlink(
         self,
         *,
-        src_symlink: Optional[Path] = None,
+        src_symlink: Path | None = None,
         symlink_dest=None,
         path_in_image: str,
-        **kwargs
+        **kwargs,
     ):
         if src_symlink is not None:
             assert symlink_dest is None
@@ -340,7 +343,7 @@ class MtreeFile:
         entry = MtreeEntry(mtree_path, attribs)
         self._mtree[mtree_path] = entry
 
-    def add_from_mtree(self, mtree_file: "MtreeFile", path: Union[PurePath, str]):
+    def add_from_mtree(self, mtree_file: MtreeFile, path: PurePath | str):
         if isinstance(path, PurePath):
             path = str(path)
         assert not path.startswith("/")
@@ -396,7 +399,7 @@ class MtreeFile:
             for path in sorted(self._mtree.keys()):
                 f.write(str(self._mtree[path]) + "\n")
 
-    def get(self, key) -> Optional[MtreeEntry]:
+    def get(self, key) -> MtreeEntry | None:
         return self._mtree.get(key)
 
     @property

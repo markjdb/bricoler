@@ -4,6 +4,8 @@
 # SPDX-License-Identifier: BSD-2-Clause
 #
 
+from __future__ import annotations
+
 import argparse
 import fcntl
 import json
@@ -11,115 +13,114 @@ import os
 import sys
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 
 class Config:
-    command_line_parameters: List[str] = []
-    config_file_object: Dict[str, Any] = {}
+    command_line_parameters: list[str] = []
+    config_file_object: dict[str, Any] = {}
     CONFIG_FILE_VERSION = 1
     config_path: Path
     files_dir: Path
-    mail_from: Optional[str] = None
-    mail_to: Optional[str] = None
+    mail_from: str | None = None
+    mail_to: str | None = None
     max_jobs: int = os.cpu_count()
     parser: argparse.ArgumentParser
     skip: bool = False
-    task_params: Dict[str, Dict[str, Any]] = {}
+    task_params: dict[str, dict[str, Any]] = {}
     workdir: Path
     uuid: uuid.UUID
 
     def __init__(self):
-        self.files_dir = Path(sys.argv[0]).parent.resolve() / 'files'
-        self.workdir = Path(os.environ.get('BRICOLER_WORKDIR',
-                                           Path.home() / 'bricoler')).resolve()
+        self.files_dir = Path(sys.argv[0]).parent.resolve() / "files"
+        self.workdir = Path(os.environ.get("BRICOLER_WORKDIR",
+                                           Path.home() / "bricoler")).resolve()
 
-        parser = argparse.ArgumentParser(prog='bricoler')
+        parser = argparse.ArgumentParser(prog="bricoler")
         parser.add_argument(
-            '-a', '--alias',
-            action='store',
-            help='define an alias for the current command-line invocation')
+            "-a", "--alias",
+            action="store",
+            help="define an alias for the current command-line invocation")
         parser.add_argument(
             "-j", "--max-jobs",
             type=int,
-            metavar='N',
+            metavar="N",
             default=self.max_jobs,
-            help='set the maximum number of concurrent jobs (default: number of CPUs)')
+            help="set the maximum number of concurrent jobs (default: number of CPUs)")
         parser.add_argument(
-            '-l', '--list',
-            action='store_true',
+            "-l", "--list",
+            action="store_true",
             help=argparse.SUPPRESS)  # only really meant for completion handlers
         parser.add_argument(
-            '--mail-from',
-            metavar='ADDR',
-            help='set the email address to send notifications from')
+            "--mail-from",
+            metavar="ADDR",
+            help="set the email address to send notifications from")
         parser.add_argument(
-            '--mail-to',
-            metavar='ADDR',
-            help='set the email address to send notifications to')
+            "--mail-to",
+            metavar="ADDR",
+            help="set the email address to send notifications to")
         parser.add_argument(
-            '-s', '--show',
-            action='store_true',
-            help='show all available tasks or task parameters')
+            "-s", "--show",
+            action="store_true",
+            help="show all available tasks or task parameters")
         parser.add_argument(
-            '-S', '--skip',
-            action='store_true',
-            help='skip execution of dependent tasks')
+            "-S", "--skip",
+            action="store_true",
+            help="skip execution of dependent tasks")
         parser.add_argument(
-            '-w', '--workdir',
-            metavar='DIR',
+            "-w", "--workdir",
+            metavar="DIR",
             default=self.workdir,
-            help='set the work directory (default: $BRICOLER_WORKDIR or ${HOME}/bricoler)')
+            help="set the work directory (default: $BRICOLER_WORKDIR or ${HOME}/bricoler)")
         parser.add_argument(
-            'task',
-            nargs='?',
-            help='the task to run')
+            "task",
+            nargs="?",
+            help="the task to run")
         self.parser = parser
 
     @property
-    def aliases(self) -> List[Dict[str, Any]]:
-        return self.config_file_object['aliases']
+    def aliases(self) -> list[dict[str, Any]]:
+        return self.config_file_object["aliases"]
 
     def add_alias(self, name: str):
         # Remove an existing alias.  Perhaps we should rename it instead?
-        self.config_file_object['aliases'] = [
-            a for a in self.config_file_object['aliases'] if a['alias'] != name
+        self.config_file_object["aliases"] = [
+            a for a in self.config_file_object["aliases"] if a["alias"] != name
         ]
-        self.config_file_object['aliases'].append({
+        self.config_file_object["aliases"].append({
             "alias": name,
             "task": self.task.name,
             "parameters": self.command_line_parameters,
         })
-        with self.config_path.open('w') as f:
+        with self.config_path.open("w") as f:
             json.dump(self.config_file_object, fp=f, indent=4)
 
-    def lookup_alias(self, name: str) -> Optional[Dict[str, Any]]:
+    def lookup_alias(self, name: str) -> dict[str, Any] | None:
         return next(
-            (a for a in self.config_file_object['aliases'] if a['alias'] == name),
-            None
+            (a for a in self.config_file_object["aliases"] if a["alias"] == name),
+            None,
         )
 
-    def load(self, lookup) -> Tuple[argparse.Namespace, Optional[List[str]]]:
-        """
-        Load the configuration file and parse command-line arguments.  Return
+    def load(self, lookup) -> tuple[argparse.Namespace, list[str] | None]:
+        """Load the configuration file and parse command-line arguments.  Return
         task parameters and any auxilliary action.
         """
         # Parse global arguments and the task name.
         opts, args = self.parser.parse_known_args()
 
-        self.mail_from = opts.mail_from or self.config_file_object.get('mail_from')
-        self.mail_to = opts.mail_to or self.config_file_object.get('mail_to')
+        self.mail_from = opts.mail_from or self.config_file_object.get("mail_from")
+        self.mail_to = opts.mail_to or self.config_file_object.get("mail_to")
         self.max_jobs = opts.max_jobs
         self.skip = opts.skip
         self.workdir.mkdir(parents=True, exist_ok=True)
-        self.config_path = Path(self.workdir / 'bricoler.json')
+        self.config_path = Path(self.workdir / "bricoler.json")
 
         # Load aliases from the configuration file.
         try:
-            f = self.config_path.open('r')
+            f = self.config_path.open("r")
         except FileNotFoundError:
             # Populate it with some initial structure.
-            with self.config_path.open('w') as f:
+            with self.config_path.open("w") as f:
                 json.dump({
                     "aliases": [],
                     "mail_from": "",
@@ -128,24 +129,24 @@ class Config:
                     "version": Config.CONFIG_FILE_VERSION,
                 }, fp=f, indent=4)
         finally:
-            with self.config_path.open('r') as f:
+            with self.config_path.open("r") as f:
                 try:
                     self.config_file_object = json.load(f)
                 except json.JSONDecodeError as e:
                     raise ValueError(
-                        f"Configuration file '{self.config_path}' is not valid JSON: {e}"
+                        f"Configuration file '{self.config_path}' is not valid JSON: {e}",
                     ) from e
 
-                version = self.config_file_object.get('version', -1)
+                version = self.config_file_object.get("version", -1)
                 if version != Config.CONFIG_FILE_VERSION:
                     raise ValueError(
-                        f"Unknown or unsupported configuration file version: {version}"
+                        f"Unknown or unsupported configuration file version: {version}",
                     )
                 try:
-                    self.uuid = uuid.UUID(self.config_file_object.get('uuid', ""))
+                    self.uuid = uuid.UUID(self.config_file_object.get("uuid", ""))
                 except ValueError as e:
                     raise ValueError(
-                        f"Configuration file '{self.config_path}' has invalid UUID: {e}"
+                        f"Configuration file '{self.config_path}' has invalid UUID: {e}",
                     ) from e
 
         if opts.task:
@@ -154,12 +155,12 @@ class Config:
                 alias = self.lookup_alias(opts.task)
                 if alias is None:
                     raise ValueError(f"Unknown task '{opts.task}'")
-                task = lookup(alias['task'])
+                task = lookup(alias["task"])
                 if task is None:
                     raise ValueError(
-                        f"Unknown task '{alias['task']}' in alias '{opts.task}'"
+                        f"Unknown task '{alias['task']}' in alias '{opts.task}'",
                     )
-                args = [f"--{param}" for param in alias['parameters']] + args
+                args = [f"--{param}" for param in alias["parameters"]] + args
             self.task = task
 
         # Parse task-specific arguments.  These are of the form
@@ -171,30 +172,30 @@ class Config:
         # e.g., bricoler freebsd-vm-boot ssh to ssh into a running task VM.
         action = None
         for arg in args:
-            if not arg.startswith('--'):
+            if not arg.startswith("--"):
                 if action is None:
                     action = args[args.index(arg):]
                     break
             arg = arg[2:]
-            if '=' not in arg:
+            if "=" not in arg:
                 raise ValueError(
-                    f"Task parameters must be of the form --<task>/<param>=<value>: {arg}"
+                    f"Task parameters must be of the form --<task>/<param>=<value>: {arg}",
                 )
-            key, val = arg.split('=', 1)
-            if '/' not in key:
+            key, val = arg.split("=", 1)
+            if "/" not in key:
                 raise ValueError(
-                    f"Task parameters must be of the form --<task>/<param>=<value>: {arg}"
+                    f"Task parameters must be of the form --<task>/<param>=<value>: {arg}",
                 )
-            task_name, param_name = key.split('/', 1)
+            task_name, param_name = key.split("/", 1)
             task = lookup(task_name)
             if task is None:
                 raise ValueError(
-                    f"Unknown task '{task_name}' in parameter '{arg}'"
+                    f"Unknown task '{task_name}' in parameter '{arg}'",
                 )
             param = task.get_parameter(param_name)
             if param is None:
                 raise ValueError(
-                    f"Task '{task_name}' has no parameter named '{param_name}'"
+                    f"Task '{task_name}' has no parameter named '{param_name}'",
                 )
 
             if task_name not in self.task_params:
@@ -207,12 +208,12 @@ class Config:
     def lock(self):
         # Lock the configuration file to prevent concurrent modifications.
         try:
-            self._locked_file = self.config_path.open('r+')
+            self._locked_file = self.config_path.open("r+")
             fcntl.flock(self._locked_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise RuntimeError(
                 f"Could not acquire lock on configuration file '{self.config_path}': "
-                "another instance of bricoler is running"
+                "another instance of bricoler is running",
             ) from None
 
     def usage(self) -> None:

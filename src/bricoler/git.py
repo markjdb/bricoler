@@ -4,8 +4,9 @@
 # SPDX-License-Identifier: BSD-2-Clause
 #
 
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
 from .util import run_cmd
@@ -16,17 +17,17 @@ class GitRepository:
     def is_ssh_url(url: str) -> bool:
         # Simple check for SSH-style Git URLs.  This doesn't match git's exact
         # behaviour but it seems close enough that it won't matter.
-        colon = url.find(':')
+        colon = url.find(":")
         if colon == -1:
             return False
-        slash = url.find('/')
+        slash = url.find("/")
         return slash == -1 or colon < slash
 
     def __init__(
         self,
         url: str,
         path: Path,
-        branch: Optional[str] = None,
+        branch: str | None = None,
         shallow: bool = True,
         no_cmds: bool = False,
     ):
@@ -35,17 +36,17 @@ class GitRepository:
         self._no_cmds = no_cmds
 
         parsed = urlparse(url)
-        self.external = parsed.scheme == '' and not self.is_ssh_url(url)
+        self.external = parsed.scheme == "" and not self.is_ssh_url(url)
         if self.external:
             self.path = Path(url).resolve()
         else:
             self.path = path.resolve()
         self.clone(shallow=shallow)
 
-    def git(self, cmd: List[str], *args, **kwargs):
+    def git(self, cmd: list[str], *args, **kwargs):
         if not self.path:
             raise ValueError("Repository has not been cloned yet")
-        return run_cmd(['git', '-C', self.path] + cmd, *args, **kwargs)
+        return run_cmd(["git", "-C", self.path] + cmd, *args, **kwargs)
 
     def checked_out_branch(self) -> str:
         return self.git(["rev-parse", "--abbrev-ref", "HEAD"], capture_output=True).stdout.decode().strip()
@@ -61,7 +62,7 @@ class GitRepository:
         if not (self.path / ".git").exists():
             if self.external:
                 raise ValueError(
-                    f"Repository path '{self.url}' does not exist or is not a repo clone"
+                    f"Repository path '{self.url}' does not exist or is not a repo clone",
                 )
             cmd = ["git", "clone"]
             if shallow:
@@ -85,7 +86,7 @@ class GitRepository:
                 break
         else:
             raise ValueError(
-                f"Clone at '{self.path}' has no remote corresponding to '{self.url}'"
+                f"Clone at '{self.path}' has no remote corresponding to '{self.url}'",
             )
         if shallow or not self.isshallow():
             self.git(["fetch", remote])
@@ -95,7 +96,7 @@ class GitRepository:
         self.git(["merge", "--ff-only", remote, f"{self.branch}"])
 
     @property
-    def remotes(self) -> Dict[str, str]:
+    def remotes(self) -> dict[str, str]:
         result = {}
         output = self.git(["remote", "-v"], capture_output=True)
         for line in output.stdout.decode().splitlines():

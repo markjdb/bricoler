@@ -4,6 +4,8 @@
 # SPDX-License-Identifier: BSD-2-Clause
 #
 
+from __future__ import annotations
+
 import functools
 import glob
 import json
@@ -17,24 +19,31 @@ import time
 from enum import Enum
 from importlib import resources
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Type, Union
 
 from .config import Config
 from .git import GitRepository
 from .mtree import MtreeFile
-from .task import Task, TaskParameter, TaskMeta, TaskSchedule
+from .task import Task, TaskMeta, TaskParameter, TaskSchedule
 from .util import EmailReport, chdir, host_machine, info, run_cmd, warn
-from .vm import FreeBSDVM, VMImage, VMHypervisor, BhyveRun, QEMURun, RVVMRun, SSHCommandRunner
+from .vm import (
+    BhyveRun,
+    FreeBSDVM,
+    QEMURun,
+    RVVMRun,
+    SSHCommandRunner,
+    VMHypervisor,
+    VMImage,
+)
 
 
 class KyuaDB:
     SCHEMA_VERSION = 3
 
     class Result(Enum):
-        PASSED = 'passed'
-        FAILED = 'failed'
-        SKIPPED = 'skipped'
-        BROKEN = 'broken'
+        PASSED = "passed"
+        FAILED = "failed"
+        SKIPPED = "skipped"
+        BROKEN = "broken"
 
     def __init__(self, path: Path):
         self.path = path
@@ -47,7 +56,7 @@ class KyuaDB:
             raise ValueError(f"KyuaDB: Unsupported schema_version {res[0]} in {path}")
 
     @functools.cache
-    def _results(self, restype: Result) -> List[str]:
+    def _results(self, restype: Result) -> list[str]:
         cursor = self.conn.cursor()
         cursor.execute(f"""
             SELECT tp.relative_path, tc.name
@@ -59,43 +68,43 @@ class KyuaDB:
         results = cursor.fetchall()
         return [f"{row[0]}:{row[1]}" for row in results]
 
-    def passed(self) -> List[str]:
+    def passed(self) -> list[str]:
         return self._results(self.Result.PASSED)
 
-    def failed(self) -> List[str]:
+    def failed(self) -> list[str]:
         return self._results(self.Result.FAILED)
 
-    def skipped(self) -> List[str]:
+    def skipped(self) -> list[str]:
         return self._results(self.Result.SKIPPED)
 
-    def broken(self) -> List[str]:
+    def broken(self) -> list[str]:
         return self._results(self.Result.BROKEN)
 
 
 class FreeBSDSrcRepository(GitRepository):
     @functools.cache
     def get___FreeBSD_version(self) -> int:
-        file = self.path / 'sys' / 'sys' / 'param.h'
-        with file.open('r') as f:
-            pattern = re.compile(r'^\s*#define\s+__FreeBSD_version\s+(\d+)')
+        file = self.path / "sys" / "sys" / "param.h"
+        with file.open("r") as f:
+            pattern = re.compile(r"^\s*#define\s+__FreeBSD_version\s+(\d+)")
             for line in f:
                 match = pattern.match(line)
                 if match:
                     return int(match.group(1))
             raise ValueError(
-                f"Could not obtain __FreeBSD_version from {file}"
+                f"Could not obtain __FreeBSD_version from {file}",
             )
 
-    def make(self, args: List[str], **kwargs):
-        cmd = ['make', '-C', self.path.resolve()] + args
+    def make(self, args: list[str], **kwargs):
+        cmd = ["make", "-C", self.path.resolve()] + args
         # Don't skip the command if we need to capture output.
-        skip = self._no_cmds and not kwargs.get('capture_output', False)
+        skip = self._no_cmds and not kwargs.get("capture_output", False)
         return run_cmd(cmd, skip=skip, **kwargs)
 
     @functools.cache
-    def machine_targets(self) -> List[str]:
-        pattern = re.compile(r'^\s*\w+/\w+$')
-        output = self.make(['targets'], capture_output=True).stdout.decode()
+    def machine_targets(self) -> list[str]:
+        pattern = re.compile(r"^\s*\w+/\w+$")
+        output = self.make(["targets"], capture_output=True).stdout.decode()
         targets = []
         for line in output.splitlines():
             if pattern.match(line.strip()):
@@ -104,132 +113,132 @@ class FreeBSDSrcRepository(GitRepository):
 
 
 class GitCheckoutTask(Task):
-    """
-    Clone a git repository, or update an existing clone.
+    """Clone a git repository, or update an existing clone.
 
     Alternately, pass a filesystem path for the "url" parameter instead
     of a URL or ssh address to use an existing local clone.
     """
+
     name = "git-checkout"
 
     parameters = {
-        'branch': TaskParameter(
+        "branch": TaskParameter(
             description="Branch to check out",
         ),
-        'shallow': TaskParameter(
+        "shallow": TaskParameter(
             description="Perform a shallow clone and fetch",
             default=True,
         ),
-        'url': TaskParameter(
+        "url": TaskParameter(
             description="URL of the Git repository to clone, or a filesystem path",
             required=True,
         ),
     }
     outputs = {
-        'repo': GitRepository
+        "repo": GitRepository,
     }
 
-    def run(self, ctx, repotype: Type[GitRepository] = GitRepository):
+    def run(self, ctx, repotype: type[GitRepository] = GitRepository):
         repo = repotype(self.url, Path("./src"), self.branch,
                         shallow=self.shallow, no_cmds=self.skip)
         repo.update(shallow=self.shallow)
-        return {'repo': repo}
+        return {"repo": repo}
 
 
 class FreeBSDSrcGitCheckoutTask(GitCheckoutTask):
+    """Clone the FreeBSD src tree, or update an existing clone.
     """
-    Clone the FreeBSD src tree, or update an existing clone.
-    """
+
     name = "freebsd-src-git-checkout"
 
     url = "anongit@git.freebsd.org:src.git"
     branch = "main"
 
     outputs = {
-        'repo': FreeBSDSrcRepository,
-        'FreeBSD_version': int,
+        "repo": FreeBSDSrcRepository,
+        "FreeBSD_version": int,
     }
 
     def run(self, ctx):
         outputs = super().run(ctx, repotype=FreeBSDSrcRepository)
-        outputs['FreeBSD_version'] = outputs['repo'].get___FreeBSD_version()
+        outputs["FreeBSD_version"] = outputs["repo"].get___FreeBSD_version()
         return outputs
 
 
 class FreeBSDSrcBuildTask(Task):
-    """
-    Build a FreeBSD source tree.  On its own this does nothing, the invoker
+    """Build a FreeBSD source tree.  On its own this does nothing, the invoker
     needs to specify some build targets.
     """
+
     name = "freebsd-src-build"
 
     parameters = {
-        'clean': TaskParameter(
+        "clean": TaskParameter(
             description="Clean build directories before building",
             default=False,
         ),
-        'kernel_config': TaskParameter(
+        "kernel_config": TaskParameter(
             description="Kernel configuration to build",
             default="GENERIC",
         ),
-        'machine': TaskParameter(
+        "machine": TaskParameter(
             description="Target machine architecture",
             default=host_machine(),
         ),
-        'make_options': TaskParameter(
+        "make_options": TaskParameter(
             description="Additional make(1) options to pass to the build",
             type=str,  # XXX-MJ List[str]
         ),
-        'make_targets': TaskParameter(
+        "make_targets": TaskParameter(
             description="Make targets to build",
             type=str,  # XXX-MJ List[str]
-            default=''
+            default="",
         ),
-        'objdir': TaskParameter(
+        "objdir": TaskParameter(
             description="Object directory path for the build",
             type=Path,  # XXX-MJ default must be computed after some partial eval
         ),
-        'toolchain': TaskParameter(
+        "toolchain": TaskParameter(
             description="Toolchain to use for the build",
         ),
     }
 
     inputs = {
-        'src': FreeBSDSrcGitCheckoutTask,
+        "src": FreeBSDSrcGitCheckoutTask,
     }
 
     outputs = {
-        'machine': str,
-        'metalog': MtreeFile,
-        'repo': FreeBSDSrcRepository,
-        'stagedir': Path,
+        "machine": str,
+        "metalog": MtreeFile,
+        "repo": FreeBSDSrcRepository,
+        "stagedir": Path,
     }
 
     def run(self, ctx):
         # See if the user specified a valid target platform.
-        if '/' not in self.machine:
+        if "/" not in self.machine:
             machine = self.machine
-            machine_arch = ''
+            machine_arch = ""
         else:
-            (machine, machine_arch) = self.machine.split('/', maxsplit=1)
+            (machine, machine_arch) = self.machine.split("/", maxsplit=1)
         targets = self.src.repo.machine_targets()
-        if machine_arch == '':
+        if machine_arch == "":
             matches = [target for target in targets if target.startswith(f"{machine}/")]
             if len(matches) == 1:
-                machine_arch = matches[0].split('/', maxsplit=1)[1]
+                machine_arch = matches[0].split("/", maxsplit=1)[1]
             else:
                 raise ValueError(
-                    f"Multiple architectures found for machine '{machine}': {' '.join(matches)}'"
+                    f"Multiple architectures found for machine '{machine}': {' '.join(matches)}'",
                 )
         if f"{machine}/{machine_arch}" not in targets:
             raise ValueError(
-                f"Unknown target platform: {self.machine}"
+                f"Unknown target platform: {self.machine}",
             )
 
         # If the kernel config is a path, extract the basename and dirname.
         kernconf = self.kernel_config
         kernconfdir = None
-        if '/' in kernconf:
+        if "/" in kernconf:
             kernconf = Path(kernconf).name
             kernconfdir = Path(self.kernel_config).parent
 
@@ -245,7 +254,7 @@ class FreeBSDSrcBuildTask(Task):
         for target in self.make_targets.split():
             metalog = stagedir / f"METALOG.{target}.mtree"
             if not self.skip:
-                with open(metalog, 'w') as f:
+                with open(metalog, "w") as f:
                     f.truncate(0)
 
             args = [
@@ -282,10 +291,10 @@ class FreeBSDSrcBuildTask(Task):
             mtree.load(metalog, append=True, contents_root=stagedir)
 
         return {
-            'machine': f"{machine}/{machine_arch}",
-            'metalog': mtree,
-            'repo': self.src.repo,
-            'stagedir': stagedir,
+            "machine": f"{machine}/{machine_arch}",
+            "metalog": mtree,
+            "repo": self.src.repo,
+            "stagedir": stagedir,
         }
 
 
@@ -298,75 +307,75 @@ class FreeBSDPkgBaseBuildTask(FreeBSDSrcBuildTask):
 
 
 class FreeBSDVMImageFilesystem(Enum):
-    UFS = 'ufs'
-    ZFS = 'zfs'
+    UFS = "ufs"
+    ZFS = "zfs"
 
 
 class FreeBSDVMImageTask(Task):
-    """
-    Build a FreeBSD VM image, optionally adding an overlay tree, installing
+    """Build a FreeBSD VM image, optionally adding an overlay tree, installing
     packages, and applying other customizations.
     """
+
     name = "freebsd-vm-image"
 
     inputs = {
-        'src': FreeBSDSrcGitCheckoutTask,
-        'build': FreeBSDSrcBuildAndInstallTask,
+        "src": FreeBSDSrcGitCheckoutTask,
+        "build": FreeBSDSrcBuildAndInstallTask,
     }
 
     outputs = {
-        'image': VMImage,
-        'ssh_key': Path,
-        'sysroot': Path,
+        "image": VMImage,
+        "ssh_key": Path,
+        "sysroot": Path,
     }
 
     parameters = {
-        'filesystem': TaskParameter(
+        "filesystem": TaskParameter(
             description="Filesystem type for the VM image",
             type=FreeBSDVMImageFilesystem,  # XXX-MJ validate enum
             default=FreeBSDVMImageFilesystem.UFS,
         ),
-        'hostname': TaskParameter(
+        "hostname": TaskParameter(
             description="Hostname for the VM",
-            default='freebsd',
+            default="freebsd",
         ),
-        'image_size': TaskParameter(
+        "image_size": TaskParameter(
             description="Size of the filesystem image in GiB",
             default=10,
         ),
-        'loader_tunables': TaskParameter(
+        "loader_tunables": TaskParameter(
             description="Loader tunables for the VM",
             type=str,  # XXX-MJ Dict[str, str]
-            default='',
+            default="",
         ),
-        'overlay': TaskParameter(
+        "overlay": TaskParameter(
             description="Path to an overlay directory to copy into the image",
             type=Path,
         ),
-        'packages': TaskParameter(
+        "packages": TaskParameter(
             description="A list of packages to install into the image",
         ),
-        'package_repo_file': TaskParameter(
+        "package_repo_file": TaskParameter(
             description="Path to a pkg(8) repository configuration file used to fetch packages",
             type=Path,
             # XXX-MJ should be a default
         ),
-        'rc_kld_list': TaskParameter(
+        "rc_kld_list": TaskParameter(
             description="A list of kernel modules to load at boot time",
         ),
-        'single_user': TaskParameter(
+        "single_user": TaskParameter(
             description="Boot into single-user mode",
             default=False,
         ),
-        'sudo_users': TaskParameter(
+        "sudo_users": TaskParameter(
             description="A list of users to grant sudo privileges, useful for tests",
             type=str,
         ),
-        'swap_size': TaskParameter(
+        "swap_size": TaskParameter(
             description="Size of the swap partition",
             default="2G",
         ),
-        'sysctls': TaskParameter(
+        "sysctls": TaskParameter(
             description="A list of sysctl(8) settings to apply to the image",
             type=str,  # XXX-MJ Dict[str, str]
         ),
@@ -385,14 +394,14 @@ class FreeBSDVMImageTask(Task):
             keyfile = Path.cwd() / "id_ed25519_root"
             if not keyfile.is_file():
                 self.run_cmd(["ssh-keygen", "-t", "ed25519", "-f", str(keyfile), "-N", ""])
-            metalog.add_file(keyfile.with_suffix('.pub'),
+            metalog.add_file(keyfile.with_suffix(".pub"),
                              Path("root/.ssh/authorized_keys"))
-            outputs['ssh_key'] = keyfile
+            outputs["ssh_key"] = keyfile
 
         def add_overlay(root: Path) -> None:
             if not root.is_dir():
                 raise ValueError(f"Overlay path '{root}' is not a directory")
-            for item in root.rglob('*'):
+            for item in root.rglob("*"):
                 rel = item.relative_to(root)
                 if item.is_dir():
                     metalog.add_dir(rel)
@@ -402,9 +411,9 @@ class FreeBSDVMImageTask(Task):
                     warn(f"Skipping unsupported overlay item: {item}")
 
         def add_config_file(
-            _path: Union[Path, str],
+            _path: Path | str,
             *args,
-            source: Optional[Path] = None,
+            source: Path | None = None,
             comment_delimiter: str = "#",
         ) -> None:
             if self.skip:
@@ -440,7 +449,7 @@ class FreeBSDVMImageTask(Task):
                         "defaultroute_delay=2",
                         "sshd_enable=YES",
                         "sshd_rsa_enable=NO",
-                        *[f"kld_list=\"${{kld_list}} {kld}\"" for kld in kld_list],
+                        *[f'kld_list="${{kld_list}} {kld}"' for kld in kld_list],
                         f"""
                         zfs_enable=YES
                         zpool_reguid={zfs_pool_name}
@@ -581,13 +590,13 @@ class FreeBSDVMImageTask(Task):
                 "-t", "ffs",
                 "-Z",
                 "-o", "softupdates=1",
-                "-o" "version=2"
+                "-oversion=2",
             ]
         else:
             makefs_cmd += [
                 "-t", "zfs",
                 "-o", f"poolname={zfs_pool_name}",
-                "-o", f"bootfs={zfs_pool_name}"
+                "-o", f"bootfs={zfs_pool_name}",
             ]
         makefs_cmd += [
             "-DD",
@@ -599,18 +608,18 @@ class FreeBSDVMImageTask(Task):
         with chdir(stagedir):
             self.run_cmd(makefs_cmd)
 
-        has_efi = not (machine.startswith('i386/') or machine.startswith('powerpc/'))
+        has_efi = not (machine.startswith("i386/") or machine.startswith("powerpc/"))
         if has_efi:
             efi_loaders = {
-                'amd64': "bootx64.efi",
-                'arm': "bootarm.efi",
-                'arm64': "bootaa64.efi",
-                'riscv': "bootriscv64.efi",
+                "amd64": "bootx64.efi",
+                "arm": "bootarm.efi",
+                "arm64": "bootaa64.efi",
+                "riscv": "bootriscv64.efi",
             }
             esp_dir = Path(image_prefix + "-efi")
             shutil.rmtree(esp_dir, ignore_errors=True)
             with chdir(esp_dir / "EFI/BOOT"):
-                efi_loader = efi_loaders[machine.split('/')[0]]
+                efi_loader = efi_loaders[machine.split("/")[0]]
                 shutil.copyfile(stagedir / "boot/loader.efi", Path(efi_loader))
 
             makefs_cmd = [
@@ -632,7 +641,7 @@ class FreeBSDVMImageTask(Task):
             "-S", 512,
             "-o", vm_image_path,
         ]
-        if machine.startswith('powerpc/'):
+        if machine.startswith("powerpc/"):
             mkimg_cmd += [
                 "-s", "mbr",
                 "-a", "1",
@@ -641,7 +650,7 @@ class FreeBSDVMImageTask(Task):
             ]
         else:
             mkimg_cmd += ["-s", "gpt"]
-            if machine.startswith('amd64/') or machine.startswith('i386/'):
+            if machine.startswith("amd64/") or machine.startswith("i386/"):
                 mkimg_cmd += [
                     "-b", f"{bootdir / 'pmbr'}",
                     "-p", f"freebsd-boot/bootfs:={bootdir / 'gptboot'}",
@@ -657,61 +666,61 @@ class FreeBSDVMImageTask(Task):
 
         self.run_cmd(mkimg_cmd)
 
-        outputs['image'] = VMImage(vm_image_path, machine)
-        outputs['sysroot'] = stagedir
+        outputs["image"] = VMImage(vm_image_path, machine)
+        outputs["sysroot"] = stagedir
 
         return outputs
 
 
 class FreeBSDVMBootTask(Task):
-    """
-    Boot a FreeBSD VM image using QEMU or bhyve.
+    """Boot a FreeBSD VM image using QEMU or bhyve.
 
     In interactive mode, the VM console is provided on standard stdin/stdout,
     and this task does not return until the VM exits.  In non-interactive mode,
     bricoler owns the console and can interact with it
     """
+
     name = "freebsd-vm-boot"
 
     inputs = {
-        'vm_image': FreeBSDVMImageTask,
+        "vm_image": FreeBSDVMImageTask,
     }
 
     parameters = {
-        'disk_list': TaskParameter(
+        "disk_list": TaskParameter(
             description="A list of extra files to add as disks",
-            type=str
+            type=str,
         ),
-        'hypervisor': TaskParameter(
+        "hypervisor": TaskParameter(
             description="Hypervisor to use for running the VM",
             type=VMHypervisor,
             # XXX-MJ should somehow default to qemu for non-native images
             default=lambda: VMHypervisor.BHYVE if BhyveRun.canrun() else VMHypervisor.QEMU,
         ),
-        'interactive': TaskParameter(
+        "interactive": TaskParameter(
             description="Run the VM in interactive mode",
             default=True,
         ),
-        'memory': TaskParameter(
+        "memory": TaskParameter(
             description="Amount of memory to allocate to the VM in MiB",
             default=2048,
         ),
-        'ncpus': TaskParameter(
+        "ncpus": TaskParameter(
             description="Number of CPUs to allocate to the VM",
             default=2,
         ),
-        'p9_shares': TaskParameter(
+        "p9_shares": TaskParameter(
             description="Comma-separated list of shares of the form <share>:<path>",
             type=str,  # XXX-MJ List[Tuple[str, Path]]
         ),
-        'reboot': TaskParameter(
+        "reboot": TaskParameter(
             description="Restart the VM when it exits due to a reboot",
             default=False,
         ),
     }
 
     outputs = {
-        'vm': Optional[FreeBSDVM],
+        "vm": Optional[FreeBSDVM],
     }
 
     def run(self, ctx):
@@ -720,7 +729,7 @@ class FreeBSDVMBootTask(Task):
             case VMHypervisor.QEMU: cls = QEMURun
             case VMHypervisor.RVVM: cls = RVVMRun
         if self.p9_shares:
-            p9_shares = [tuple(desc.split(':')) for desc in self.p9_shares.split(',')]
+            p9_shares = [tuple(desc.split(":")) for desc in self.p9_shares.split(",")]
         else:
             p9_shares = []
         vmrun = cls(
@@ -753,15 +762,15 @@ class FreeBSDVMBootTask(Task):
             console_log = open("vm-console.log", "wb")
             vm = FreeBSDVM(vmrun, logfiles=[console_log, sys.stdout.buffer])
 
-        return {'vm': vm}
+        return {"vm": vm}
 
     def _gdb(self, *args):
         if shutil.which("gdb") is None:
             raise ValueError("gdb is not available")
         sysroot = Path(os.readlink(Path.cwd() / "sysroot"))
-        with open(Path.cwd() / "gdb-addr", "r") as f:
+        with open(Path.cwd() / "gdb-addr") as f:
             addr = f.read().strip()
-        (host, portstr) = addr.split(':', maxsplit=1)
+        (host, portstr) = addr.split(":", maxsplit=1)
         port = int(portstr)
         gdb_cmd = [
             "gdb",
@@ -774,15 +783,15 @@ class FreeBSDVMBootTask(Task):
         self.run_cmd(gdb_cmd, process_group=0)
 
     def _ssh(self, *args):
-        with open(Path.cwd() / "ssh-addr", "r") as f:
+        with open(Path.cwd() / "ssh-addr") as f:
             addr = f.read().strip()
-        (host, portstr) = addr.split(':', maxsplit=1)
+        (host, portstr) = addr.split(":", maxsplit=1)
         ssh = SSHCommandRunner((host, portstr), Path.cwd() / "ssh_key")
         ssh.run_cmd()
 
     actions = {
-        'gdb': _gdb,
-        'ssh': _ssh,
+        "gdb": _gdb,
+        "ssh": _ssh,
     }
 
 
@@ -799,10 +808,10 @@ class FreeBSDRegressionTestSuiteBuildTask(FreeBSDSrcBuildAndInstallTask):
         outputs = super().run(ctx)
 
         # Manually install the run-kyua helper script.
-        dest = outputs['stagedir'] / "usr/tests/run-kyua"
+        dest = outputs["stagedir"] / "usr/tests/run-kyua"
         with resources.as_file(resources.files("bricoler") / "run-kyua") as src:
             shutil.copyfile(src, dest)
-        outputs['metalog'].add_file(dest, Path("usr/tests/run-kyua"), mode=0o755)
+        outputs["metalog"].add_file(dest, Path("usr/tests/run-kyua"), mode=0o755)
         return outputs
 
 
@@ -880,22 +889,22 @@ class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
     ])
 
     inputs = {
-        'build': FreeBSDRegressionTestSuiteBuildTask,
+        "build": FreeBSDRegressionTestSuiteBuildTask,
     }
 
     def run(self, ctx):
         metalog = self.build.metalog
-        metalog.add_symlink(symlink_dest='/usr/local/bin/clang', path_in_image='usr/bin/cc')
-        metalog.add_symlink(symlink_dest='/usr/local/bin/ld.lld', path_in_image='usr/bin/ld')
-        metalog.add_symlink(symlink_dest='/usr/local/bin/clang-cpp', path_in_image='usr/bin/cpp')
-        metalog.add_symlink(symlink_dest='/usr/local/bin/clang++', path_in_image='usr/bin/c++')
+        metalog.add_symlink(symlink_dest="/usr/local/bin/clang", path_in_image="usr/bin/cc")
+        metalog.add_symlink(symlink_dest="/usr/local/bin/ld.lld", path_in_image="usr/bin/ld")
+        metalog.add_symlink(symlink_dest="/usr/local/bin/clang-cpp", path_in_image="usr/bin/cpp")
+        metalog.add_symlink(symlink_dest="/usr/local/bin/clang++", path_in_image="usr/bin/c++")
         return super().run(ctx)
 
 
 class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
+    """Boot a virtual machine and run the FreeBSD regression test suite.
     """
-    Boot a virtual machine and run the FreeBSD regression test suite.
-    """
+
     name = "freebsd-regression-test-suite"
 
     # XXX-MJ kernel_config should be GENERIC-DEBUG on stable branches
@@ -904,19 +913,19 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
     memory = 1024 * (os.cpu_count() // 2)
 
     inputs = {
-        'vm_image': FreeBSDRegressionTestSuiteVMImageTask,
+        "vm_image": FreeBSDRegressionTestSuiteVMImageTask,
     }
 
     parameters = {
-        'count': TaskParameter(
+        "count": TaskParameter(
             description="Number of times to run the tests",
             default=1,
         ),
-        'parallelism': TaskParameter(
+        "parallelism": TaskParameter(
             description="Number of tests to run in parallel",
             default=os.cpu_count() // 2,  # XXX-MJ duplicating the ncpus value
         ),
-        'tests': TaskParameter(
+        "tests": TaskParameter(
             description="A space-separated list of test cases or test suites to run, "
                         "or the empty string to run all tests",
             default="",
@@ -924,16 +933,16 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
     }
 
     outputs = {
-        'report_db_path': Path,
-        'report_txt_path': Path,
+        "report_db_path": Path,
+        "report_txt_path": Path,
     }
 
     def run(self, ctx):
         outputs = super().run(ctx)
-        vm: FreeBSDVM = outputs['vm']
+        vm: FreeBSDVM = outputs["vm"]
         if vm is None:
             raise ValueError(
-                "Cannot run tests, VM must be run in non-interactive mode"
+                "Cannot run tests, VM must be run in non-interactive mode",
             )
 
         try:
@@ -964,21 +973,20 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
                 self._gdb("-ex", f"thread {e.cpuid + 1}")
             raise e
         return {
-            'report_db_path': report_db_path,
-            'report_txt_path': report_txt_path,
+            "report_db_path": report_db_path,
+            "report_txt_path": report_txt_path,
         }
 
     def _report(self, *args):
         self.run_cmd(["less", Path.cwd() / "kyua-report.txt"])
 
     actions = {
-        'report': _report,
+        "report": _report,
     }
 
 
 class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
-    """
-    Run the regression test suite in CI mode:
+    """Run the regression test suite in CI mode:
     - Raise warnings about unexpected skipped tests. XXX-MJ
     - Detect flakiness in tests and report it.
     - Look for witness warnings after test runs and report them. XXX-MJ
@@ -986,20 +994,21 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
     - Keep track of results over time and report regressions. XXX-MJ
     - Generate email reports.
     """
+
     name = "freebsd-regression-test-suite-ci"
 
     inputs = {
-        'src': FreeBSDSrcGitCheckoutTask,
+        "src": FreeBSDSrcGitCheckoutTask,
     }
 
     outputs = {
-        'email': EmailReport,
+        "email": EmailReport,
     }
 
     def run(self, ctx):
         outputs = super().run(ctx)
 
-        db = KyuaDB(outputs['report_db_path'])
+        db = KyuaDB(outputs["report_db_path"])
         failing_tests = db.failed() + db.broken()
         flaky = []
         if failing_tests:
@@ -1010,7 +1019,7 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
                 self.tests = " ".join(failing_tests)
                 flaky_outputs = super().run(ctx)
 
-            flaky_passed = set(KyuaDB(flaky_outputs['report_db_path']).passed())
+            flaky_passed = set(KyuaDB(flaky_outputs["report_db_path"]).passed())
 
             flaky = [t for t in failing_tests if t in flaky_passed]
             confirmed_failures = [t for t in failing_tests if t not in flaky_passed]
@@ -1044,7 +1053,7 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
                     report += "\n"
 
         return {
-            'email': EmailReport(
+            "email": EmailReport(
                 subject=subject,
                 body=report,
             ),
@@ -1070,25 +1079,25 @@ class FreeBSDDTraceTestSuiteVMImageTask(FreeBSDRegressionTestSuiteVMImageTask):
         "dtraceall",
         "dtrace_test",
         "kinst",
-        "sctp"
+        "sctp",
     ])
 
     inputs = {
-        'build': FreeBSDDTraceTestSuiteBuildTask,
+        "build": FreeBSDDTraceTestSuiteBuildTask,
     }
 
 
 class FreeBSDDTraceTestSuiteTask(FreeBSDRegressionTestSuiteTask):
+    """Boot a virtual machine and run the FreeBSD DTrace regression test suite.
     """
-    Boot a virtual machine and run the FreeBSD DTrace regression test suite.
-    """
+
     name = "freebsd-dtrace-test-suite"
 
     parallelism = 1
     tests = "cddl/usr.sbin/dtrace"
 
     inputs = {
-        'vm_image': FreeBSDDTraceTestSuiteVMImageTask,
+        "vm_image": FreeBSDDTraceTestSuiteVMImageTask,
     }
 
 
@@ -1107,7 +1116,7 @@ class CheriBSDSrcBuildTask(FreeBSDSrcBuildTask):
     kernel_config = "GENERIC-MORELLO-PURECAP"
 
     inputs = {
-        'src': CheriBSDSrcGitCheckoutTask,
+        "src": CheriBSDSrcGitCheckoutTask,
     }
 
 
@@ -1119,8 +1128,8 @@ class CheriBSDVMImageTask(FreeBSDVMImageTask):
     name = "cheribsd-vm-image"
 
     inputs = {
-        'src': CheriBSDSrcGitCheckoutTask,
-        'build': CheriBSDSrcBuildAndInstallTask,
+        "src": CheriBSDSrcGitCheckoutTask,
+        "build": CheriBSDSrcBuildAndInstallTask,
     }
 
 
@@ -1128,7 +1137,7 @@ class CheriBSDVMBootTask(FreeBSDVMBootTask):
     name = "cheribsd-vm-boot"
 
     inputs = {
-        'vm_image': CheriBSDVMImageTask,
+        "vm_image": CheriBSDVMImageTask,
     }
 
 
@@ -1144,8 +1153,8 @@ class EC2Provider:
             raise ImportError("boto3 is required for EC2 tasks") from e
 
         self.config = config
-        self.client = boto3.client('ec2', region)
-        self.resource = boto3.resource('ec2', region)
+        self.client = boto3.client("ec2", region)
+        self.resource = boto3.resource("ec2", region)
         self.ssh_key_dir = self.config.workdir / "ec2-ssh-keys"
 
     def create_ssh_keypair(self, key_name: str, tag_value: str) -> Path:
@@ -1155,14 +1164,14 @@ class EC2Provider:
                 key_pair = self.resource.create_key_pair(
                     KeyName=key_name,
                     TagSpecifications=[{
-                        'ResourceType': "key-pair",
-                        'Tags': [
-                            {'Key': "bricoler", 'Value': tag_value},
+                        "ResourceType": "key-pair",
+                        "Tags": [
+                            {"Key": "bricoler", "Value": tag_value},
                         ],
-                    }]
+                    }],
                 )
                 private_key = key_pair.key_material
-                with keyfile.open('w', encoding='utf-8') as f:
+                with keyfile.open("w", encoding="utf-8") as f:
                     f.write(private_key)
                 keyfile.chmod(0o400)
             return keyfile
@@ -1176,8 +1185,8 @@ class EC2Provider:
         tag_value: str,
     ):
         ami = self.ami_by_id(image_id)
-        bdm = ami.get('BlockDeviceMappings')
-        bdm[0]['Ebs']['VolumeSize'] = volume_size
+        bdm = ami.get("BlockDeviceMappings")
+        bdm[0]["Ebs"]["VolumeSize"] = volume_size
 
         instances = self.resource.create_instances(
             ImageId=image_id,
@@ -1187,9 +1196,9 @@ class EC2Provider:
             MaxCount=1,
             BlockDeviceMappings=bdm,
             TagSpecifications=[{
-                'ResourceType': "instance",
-                'Tags': [{'Key': "bricoler", 'Value': tag_value}],
-            }]
+                "ResourceType": "instance",
+                "Tags": [{"Key": "bricoler", "Value": tag_value}],
+            }],
         )
         instance = instances[0]
         instance.wait_until_running()
@@ -1202,13 +1211,13 @@ class EC2Provider:
         while time.time() - start_time < timeout:
             response = ec2_client.describe_instance_status(
                 InstanceIds=[instance.id],
-                IncludeAllInstances=False
+                IncludeAllInstances=False,
             )
 
-            if response['InstanceStatuses']:
-                status = response['InstanceStatuses'][0]
-                instance_status = status['InstanceStatus']['Status']
-                system_status = status['SystemStatus']['Status']
+            if response["InstanceStatuses"]:
+                status = response["InstanceStatuses"][0]
+                instance_status = status["InstanceStatus"]["Status"]
+                system_status = status["SystemStatus"]["Status"]
 
                 if instance_status == "ok" and system_status == "ok":
                     # XXX-MJ also need to wait for ssh
@@ -1218,7 +1227,7 @@ class EC2Provider:
 
     def clean(self, tag_value: str = "*"):
         filters = [
-            {'Name': "tag:bricoler", 'Values': [tag_value]},
+            {"Name": "tag:bricoler", "Values": [tag_value]},
         ]
 
         shutil.rmtree(self.ssh_key_dir, ignore_errors=True)
@@ -1232,38 +1241,38 @@ class EC2Provider:
             instance.wait_until_terminated()
 
     @functools.cache
-    def ami_by_id(self, image_id: str) -> Dict[str, str]:
+    def ami_by_id(self, image_id: str) -> dict[str, str]:
         response = self.client.describe_images(ImageIds=[image_id])
-        images = response['Images']
+        images = response["Images"]
         if len(images) == 0:
             raise ValueError(f"AMI {image_id} not found")
         return images[0]
 
     @functools.cache
-    def freebsd_amis(self, owners: Tuple[str] = ("aws-marketplace",)) -> List[Dict[str, str]]:
+    def freebsd_amis(self, owners: tuple[str] = ("aws-marketplace",)) -> list[dict[str, str]]:
         response = self.client.describe_images(
             Filters=[
-                {'Name': "name", 'Values': ["FreeBSD*"]},
-                {'Name': "state", 'Values': ["available"]},
+                {"Name": "name", "Values": ["FreeBSD*"]},
+                {"Name": "state", "Values": ["available"]},
             ],
             Owners=list(owners),
         )
-        images = response['Images']
-        images.sort(key=lambda x: x['CreationDate'], reverse=True)
+        images = response["Images"]
+        images.sort(key=lambda x: x["CreationDate"], reverse=True)
         return images
 
     @functools.cache
     def instance_types(self):
         response = self.client.describe_instance_types()
-        instance_types = response['InstanceTypes']
-        instance_types.sort(key=lambda x: x['InstanceType'])
+        instance_types = response["InstanceTypes"]
+        instance_types.sort(key=lambda x: x["InstanceType"])
         return instance_types
 
 
 class EC2MetaTask(Task):
     parameters = {
         # XXX-MJ need a mechanism to set a default value for this from the config file
-        'aws_region': TaskParameter(
+        "aws_region": TaskParameter(
             description="AWS region to use",
             default="us-east-1",
         ),
@@ -1271,21 +1280,21 @@ class EC2MetaTask(Task):
 
 
 class EC2LaunchTask(EC2MetaTask):
+    """Launch an EC2 instance accessible via ssh.
     """
-    Launch an EC2 instance accessible via ssh.
-    """
+
     name = "ec2-launch-freebsd"
 
     parameters = {
-        'image_id': TaskParameter(
+        "image_id": TaskParameter(
             description="AMI ID of the FreeBSD image to launch",
             required=True,
         ),
-        'instance_type': TaskParameter(
+        "instance_type": TaskParameter(
             description="EC2 instance type to launch",
             required=True,
         ),
-        'volume_size': TaskParameter(
+        "volume_size": TaskParameter(
             description="Size of the root volume in GiB",
             default=20,
         ),
@@ -1312,17 +1321,17 @@ class EC2LaunchTask(EC2MetaTask):
 
 
 class EC2CleanTask(EC2MetaTask):
-    """
-    Clean up EC2 resources created by bricoler.
+    """Clean up EC2 resources created by bricoler.
 
     By default it only cleans up resources created in the current workdir; the
     "all" parameter can be used to clean up all resources created by bricoler
     using a given IAM account.
     """
+
     name = "ec2-clean"
 
     parameters = {
-        'all': TaskParameter(
+        "all": TaskParameter(
             description="Clean up all EC2 resources created by bricoler across all workdirs",
             default=False,
         ),
@@ -1335,13 +1344,13 @@ class EC2CleanTask(EC2MetaTask):
 
 
 class EC2ListAMIsTask(EC2MetaTask):
+    """List FreeBSD AMIs available from the specified owner.
     """
-    List FreeBSD AMIs available from the specified owner.
-    """
+
     name = "ec2-list-freebsd-amis"
 
     parameters = {
-        'owners': TaskParameter(
+        "owners": TaskParameter(
             description="Space-separated list of AMI owners to filter by",
             default="782442783595",  # FreeBSD community AMIs
         ),
@@ -1355,17 +1364,17 @@ class EC2ListAMIsTask(EC2MetaTask):
 
 
 class EC2ListInstanceTypesTask(EC2MetaTask):
+    """List all EC2 instance types in a given region.
     """
-    List all EC2 instance types in a given region.
-    """
+
     name = "ec2-list-instance-types"
 
     parameters = {
-        'min_ncpu': TaskParameter(
+        "min_ncpu": TaskParameter(
             description="Filter instance types by minimum number of CPUs",
             default=1,
         ),
-        'min_memory': TaskParameter(
+        "min_memory": TaskParameter(
             description="Filter instance types by minimum memory (in MiB)",
             default=256,
         ),
@@ -1375,52 +1384,52 @@ class EC2ListInstanceTypesTask(EC2MetaTask):
         provider = EC2Provider(self.config, self.aws_region)
         instance_types = provider.instance_types()
         for it in instance_types:
-            if it['VCpuInfo']['DefaultVCpus'] < self.min_ncpu:
+            if it["VCpuInfo"]["DefaultVCpus"] < self.min_ncpu:
                 continue
-            if it['MemoryInfo']['SizeInMiB'] < self.min_memory:
+            if it["MemoryInfo"]["SizeInMiB"] < self.min_memory:
                 continue
             json.dump(it, sys.stdout, indent=2)
         return {}
 
 
 class OpenZFSGitCheckoutTask(GitCheckoutTask):
+    """Clone the OpenZFS repository, or update an existing clone.
     """
-    Clone the OpenZFS repository, or update an existing clone.
-    """
+
     name = "openzfs-git-checkout"
 
     url = "https://github.com/openzfs/zfs"
     branch = "master"
 
     outputs = {
-        'repo': GitRepository,
+        "repo": GitRepository,
     }
 
 
 class OpenZFSBuildTask(Task):
+    """Build OpenZFS from a Git repository checkout.
     """
-    Build OpenZFS from a Git repository checkout.
-    """
+
     name = "openzfs-build"
 
     parameters = {
-        'clean': TaskParameter(
+        "clean": TaskParameter(
             description="Clean build artifacts before building",
-            default=False
+            default=False,
         ),
-        'sysdir': TaskParameter(
+        "sysdir": TaskParameter(
             description="Path to the FreeBSD kernel source to compile against",
-            default=Path("/usr/src/sys")
+            default=Path("/usr/src/sys"),
         ),
     }
 
     inputs = {
-        'src': OpenZFSGitCheckoutTask,
+        "src": OpenZFSGitCheckoutTask,
     }
 
     outputs = {
-        'user_stagedir': Path,
-        'kmod_stagedir': Path,
+        "user_stagedir": Path,
+        "kmod_stagedir": Path,
     }
 
     def run(self, ctx):
@@ -1454,7 +1463,7 @@ class OpenZFSBuildTask(Task):
                 "-f", "Makefile.bsd",
                 "CC=cc",
                 f"SYSDIR={self.sysdir}",
-                "WITH_DEBUG=true"
+                "WITH_DEBUG=true",
             ])
             self.run_cmd([
                 "make", "-s",
@@ -1469,8 +1478,8 @@ class OpenZFSBuildTask(Task):
             ])
 
         return {
-            'user_stagedir': user_stagedir,
-            'kmod_stagedir': kmod_stagedir,
+            "user_stagedir": user_stagedir,
+            "kmod_stagedir": kmod_stagedir,
         }
 
 
@@ -1484,7 +1493,7 @@ class OpenZFSTestSuiteFreeBSDSrcBuildTask(FreeBSDSrcBuildAndInstallTask):
 
 class OpenZFSTestSuiteBuildTask(OpenZFSBuildTask):
     inputs = {
-        'freebsd_build': OpenZFSTestSuiteFreeBSDSrcBuildTask,
+        "freebsd_build": OpenZFSTestSuiteFreeBSDSrcBuildTask,
     }
 
     outputs = OpenZFSBuildTask.outputs | OpenZFSTestSuiteFreeBSDSrcBuildTask.outputs
@@ -1518,7 +1527,7 @@ class OpenZFSTestSuiteVMImageTask(FreeBSDVMImageTask):
     sudo_users = "tests"
 
     inputs = {
-        'build': OpenZFSTestSuiteBuildTask,
+        "build": OpenZFSTestSuiteBuildTask,
     }
 
     def run(self, ctx):
@@ -1533,7 +1542,7 @@ class OpenZFSTestSuiteVMImageTask(FreeBSDVMImageTask):
         def add_overlay(root: Path) -> None:
             if not root.is_dir():
                 raise ValueError(f"Overlay path '{root}' is not a directory")
-            for item in root.rglob('*'):
+            for item in root.rglob("*"):
                 rel = item.relative_to(root)
                 if item.is_dir():
                     mtree.add_dir(rel)
@@ -1543,7 +1552,7 @@ class OpenZFSTestSuiteVMImageTask(FreeBSDVMImageTask):
                     mtree.add_symlink(src_symlink=item, path_in_image=rel)
                 else:
                     raise ValueError(
-                        f"Unsupported file type for overlay: {item}"
+                        f"Unsupported file type for overlay: {item}",
                     )
 
         add_overlay(self.build.user_stagedir)
@@ -1552,9 +1561,9 @@ class OpenZFSTestSuiteVMImageTask(FreeBSDVMImageTask):
 
 
 class OpenZFSTestSuiteTask(FreeBSDVMBootTask):
+    """Boot a virtual machine and run the OpenZFS test suite (ZTS).
     """
-    Boot a virtual machine and run the OpenZFS test suite (ZTS).
-    """
+
     name = "openzfs-test-suite"
 
     interactive = False
@@ -1562,7 +1571,7 @@ class OpenZFSTestSuiteTask(FreeBSDVMBootTask):
     memory = 1024 * (os.cpu_count() // 2)
 
     inputs = {
-        'vm_image': OpenZFSTestSuiteVMImageTask,
+        "vm_image": OpenZFSTestSuiteVMImageTask,
     }
 
     def run(self, ctx):
@@ -1574,16 +1583,16 @@ class OpenZFSTestSuiteTask(FreeBSDVMBootTask):
         self.disk_list = disk_list
 
         outputs = super().run(ctx)
-        vm: FreeBSDVM = outputs['vm']
+        vm: FreeBSDVM = outputs["vm"]
         if vm is None:
             raise ValueError(
-                "Cannot run tests, VM must be run in non-interactive mode"
+                "Cannot run tests, VM must be run in non-interactive mode",
             )
 
         try:
             vm.boot_to_login()
             cmd = "/usr/local/share/zfs/zfs-tests.sh -v"
-            vm.sendline(f"DISKS=\"vtbd1 vtbd2 vtbd3\" su -m tests -c \"{cmd}\"")
+            vm.sendline(f'DISKS="vtbd1 vtbd2 vtbd3" su -m tests -c "{cmd}"')
             vm.wait_for_prompt(timeout=10*3600)
 
             ssh = SSHCommandRunner(vm.vmrun.ssh_addr, vm.vmrun.ssh_key)
@@ -1596,9 +1605,9 @@ class OpenZFSTestSuiteTask(FreeBSDVMBootTask):
 
 
 class SyzkallerGitCheckoutTask(GitCheckoutTask):
+    """Clone the syzkaller repository, or update an existing clone.
     """
-    Clone the syzkaller repository, or update an existing clone.
-    """
+
     name = "syzkaller-git-checkout"
 
     url = "https://github.com/google/syzkaller"
@@ -1606,41 +1615,41 @@ class SyzkallerGitCheckoutTask(GitCheckoutTask):
     shallow = False  # Some syzkaller tests require a full clone.
 
     outputs = {
-        'repo': GitRepository,
+        "repo": GitRepository,
     }
 
 
 class SyzkallerBuildTask(Task):
+    """Build syzkaller from a Git repository checkout.
     """
-    Build syzkaller from a Git repository checkout.
-    """
+
     name = "syzkaller-build"
 
     parameters = {
-        'test': TaskParameter(
+        "test": TaskParameter(
             description="Run tests after building",
-            default=True
+            default=True,
         ),
     }
 
     inputs = {
-        'src': SyzkallerGitCheckoutTask,
+        "src": SyzkallerGitCheckoutTask,
     }
 
     outputs = {
-        'bindir': Path,
-        'repo': GitRepository,
+        "bindir": Path,
+        "repo": GitRepository,
     }
 
     def run(self, ctx):
         with chdir(self.src.repo.path):
-            env = {'GOMAXPROCS': str(ctx.max_jobs)}
+            env = {"GOMAXPROCS": str(ctx.max_jobs)}
             self.run_cmd(["gmake"], env=env)
             if self.test:
                 self.run_cmd(["gmake", "test"], env=env)
         return {
-            'bindir': self.src.repo.path / "bin",
-            'repo': self.src.repo,
+            "bindir": self.src.repo.path / "bin",
+            "repo": self.src.repo,
         }
 
 
@@ -1659,51 +1668,51 @@ class SyzkallerFuzzFreeBSDBuildTask(FreeBSDSrcBuildAndInstallTask):
 
 class SyzkallerFuzzFreeBSDVMImageTask(FreeBSDVMImageTask):
     inputs = {
-        'build': SyzkallerFuzzFreeBSDBuildTask,
+        "build": SyzkallerFuzzFreeBSDBuildTask,
     }
 
 
 class SyzkallerFuzzFreeBSDTask(Task):
+    """Run syzkaller against a FreeBSD target
     """
-    Run syzkaller against a FreeBSD target
-    """
+
     name = "syzkaller-fuzz-freebsd"
 
     parameters = {
-        'dashboard_addr': TaskParameter(
+        "dashboard_addr": TaskParameter(
             description="Address of the syzkaller HTTP dashboard",
             default="0.0.0.0:8080",
         ),
-        'debug': TaskParameter(
+        "debug": TaskParameter(
             description="Run syzkaller in debug mode with a single VM and verbose logging",
             default=False,
         ),
-        'hypervisor': TaskParameter(
+        "hypervisor": TaskParameter(
             description="Hypervisor to use for running the VM",
             type=VMHypervisor,
             default=VMHypervisor.BHYVE if BhyveRun.canrun() else VMHypervisor.QEMU,
         ),
-        'vm_count': TaskParameter(
+        "vm_count": TaskParameter(
             description="Number of VMs to run in parallel (ignored in debug mode)",
             default=os.cpu_count() // 2,
         ),
-        'vm_ncpu': TaskParameter(
+        "vm_ncpu": TaskParameter(
             description="Number of CPUs to allocate to each VM",
             default=2,
         ),
-        'vm_memory': TaskParameter(
+        "vm_memory": TaskParameter(
             description="Amount of memory to allocate to each VM in MiB",
             default=2048,
         ),
-        'zfs_dataset': TaskParameter(
+        "zfs_dataset": TaskParameter(
             description="ZFS dataset to use for storing syzkaller workdir and VM images",
             type=str,
-        )
+        ),
     }
 
     inputs = {
-        'syzkaller': SyzkallerBuildTask,
-        'vm_image': SyzkallerFuzzFreeBSDVMImageTask,
+        "syzkaller": SyzkallerBuildTask,
+        "vm_image": SyzkallerFuzzFreeBSDVMImageTask,
     }
 
     def run(self, ctx):
@@ -1721,36 +1730,36 @@ class SyzkallerFuzzFreeBSDTask(Task):
 
             # bhyve doesn't support transient disk snapshots, so we have to provide
             # a ZFS dataset to syz-manager that it can clone.
-            hypervisor_args['dataset'] = self.zfs_dataset
-            hypervisor_args['bootrom'] = "/usr/local/share/uefi-firmware/BHYVE_UEFI.fd"
+            hypervisor_args["dataset"] = self.zfs_dataset
+            hypervisor_args["bootrom"] = "/usr/local/share/uefi-firmware/BHYVE_UEFI.fd"
 
             image_path = str(Path(mountpoint) / "syzkaller.img")
             shutil.copyfile(self.vm_image.image.path, image_path)
         else:
             # --enable-kvm is hard-coded in the QEMU parameters for FreeBSD
             # targets, so we have to do this fragile thing to remove it.
-            hypervisor_args['qemu_args'] = ""
+            hypervisor_args["qemu_args"] = ""
 
             image_path = self.vm_image.image.path
 
         workdir = Path.cwd() / "workdir"
         workdir.mkdir(exist_ok=True)
 
-        machine = self.vm_image.image.machine.split('/', maxsplit=1)[1]
+        machine = self.vm_image.image.machine.split("/", maxsplit=1)[1]
         params = {
-            'target': f"freebsd/{machine}",
-            'workdir': str(workdir),
-            'type': f"{self.hypervisor.value.lower()}",
-            'syzkaller': str(self.syzkaller.repo.path),
-            'image': str(image_path),
-            'http': self.dashboard_addr,
-            'ssh_user': "root",
-            'sshkey': str(self.vm_image.ssh_key),
-            'procs': 2,
-            'vm': {
-                'cpu': self.vm_ncpu,
-                'mem': str(self.vm_memory) + "M",
-                'count': self.vm_count,
+            "target": f"freebsd/{machine}",
+            "workdir": str(workdir),
+            "type": f"{self.hypervisor.value.lower()}",
+            "syzkaller": str(self.syzkaller.repo.path),
+            "image": str(image_path),
+            "http": self.dashboard_addr,
+            "ssh_user": "root",
+            "sshkey": str(self.vm_image.ssh_key),
+            "procs": 2,
+            "vm": {
+                "cpu": self.vm_ncpu,
+                "mem": str(self.vm_memory) + "M",
+                "count": self.vm_count,
             } | hypervisor_args,
         }
 
@@ -1791,15 +1800,14 @@ def main() -> int:
             for alias in config.aliases:
                 print(f"  {alias['alias']} (alias for {alias['task']})")
             return 0
-        elif args.list:
+        if args.list:
             for task_name in TaskMeta.task_names():
                 print(task_name)
             for alias in config.aliases:
-                print(alias['alias'])
+                print(alias["alias"])
             return 0
-        else:
-            config.usage()
-            return 1
+        config.usage()
+        return 1
 
     if args.alias:
         config.add_alias(args.alias)
@@ -1812,13 +1820,13 @@ def main() -> int:
         if sched.target.__class__.__doc__ is not None:
             print(sched.target.__class__.__doc__.strip() + "\n")
         else:
-            print("")
+            print()
         if len(sched.target.parameters) > 0:
             print("Parameters:")
             width = max(len(name) for name in sched.parameters.keys()) + 2
             for name, param in sched.parameters.items():
                 print(f"{name+':':<{width}} {param[0].description}")
-                print(f"{'':{width+1}}{str(param[1])}")
+                print(f"{'':{width+1}}{param[1]!s}")
     elif args.list:
         for task in sched.tasks.values():
             for name in task.__class__.get_parameter_keys():

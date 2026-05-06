@@ -4,6 +4,8 @@
 # SPDX-License-Identifier: BSD-2-Clause
 #
 
+from __future__ import annotations
+
 import functools
 import os
 import signal
@@ -13,11 +15,10 @@ import sys
 from contextlib import contextmanager
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
 
 
 class EmailReport:
-    def __init__(self, subject: str, body: str, attachments: List[Path] = []):
+    def __init__(self, subject: str, body: str, attachments: list[Path] = []):
         self.subject = subject
         self.body = body
         self.attachments = attachments
@@ -32,7 +33,7 @@ class EmailReport:
         )
 
         for attachment in self.attachments:
-            with attachment.open('rb') as f:
+            with attachment.open("rb") as f:
                 content = f.read()
                 msg += f"\n\nAttachment: {attachment.name}\n{content.decode(errors='replace')}"
 
@@ -80,16 +81,16 @@ def sysctl(name: str) -> str:
 
 
 def run_cmd(
-    cmd: List[Any],
+    cmd: list,
     *args,
-    env: Optional[Dict[str, str]] = None,
+    env: dict[str, str] | None = None,
     check_result: bool = True,
     skip: bool = False,
-    **kwargs
+    **kwargs,
 ):
     cmd = [str(c) for c in cmd]
-    cmdstr = ' '.join(cmd)
-    log = not kwargs.get('capture_output', False)
+    cmdstr = " ".join(cmd)
+    log = not kwargs.get("capture_output", False)
     if skip:
         if log:
             info(f"EXEC(skipped): '{cmdstr}'")
@@ -100,15 +101,15 @@ def run_cmd(
         tmp = os.environ.copy()
         tmp.update(env)
         env = tmp
-        assert kwargs.get('env') is None
-        kwargs['env'] = env
+        assert kwargs.get("env") is None
+        kwargs["env"] = env
 
-    capture_output = kwargs.pop('capture_output', False)
+    capture_output = kwargs.pop("capture_output", False)
     if capture_output:
-        kwargs['stdout'] = subprocess.PIPE
-        kwargs['stderr'] = subprocess.PIPE
+        kwargs["stdout"] = subprocess.PIPE
+        kwargs["stderr"] = subprocess.PIPE
 
-    new_pgrp = kwargs.get('process_group') == 0
+    new_pgrp = kwargs.get("process_group") == 0
     old_pgrp = None
     old_sigttou = None
     if new_pgrp and sys.stdin.isatty():
@@ -142,7 +143,7 @@ def warn(message: str):
     print(colour("WARN", ANSIColour.YELLOW) + f": {message}", file=sys.stderr)
 
 
-def unused_tcp_addr() -> Tuple[str, int]:
+def unused_tcp_addr() -> tuple[str, int]:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('127.0.0.1', 0))
+        s.bind(("127.0.0.1", 0))
         return s.getsockname()
