@@ -13,10 +13,14 @@ import uuid
 from abc import abstractmethod
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pexpect
 
 from .util import run_cmd, unused_tcp_addr
+
+if TYPE_CHECKING:
+    import io
 
 
 class SSHCommandRunner:
@@ -37,7 +41,8 @@ class SSHCommandRunner:
             "-i",
             str(self.key),
             f"root@{self.addr}",
-        ] + cmd
+            *cmd,
+        ]
         run_cmd(ssh_cmd, check_result=True)
 
     def scp_from(self, src: Path, dst: Path) -> None:
@@ -442,9 +447,10 @@ class FreeBSDVM:
             for f in self.files:
                 f.flush()
 
-    def __init__(self, vmrun: VMRun, logfiles=[sys.stdout.buffer]) -> None:
+    def __init__(self, vmrun: VMRun, logfiles: list[io.BytesIO] | None = None) -> None:
         self.vmrun = vmrun
         self.cmd = vmrun.setup()
+        logfiles = logfiles or [sys.stdout.buffer]
         self.logfile = FreeBSDVM._Tee(*logfiles)
 
     def expect(self, prompt: str, **kwargs) -> int:

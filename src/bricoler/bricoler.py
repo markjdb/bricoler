@@ -58,13 +58,16 @@ class KyuaDB:
     @functools.cache
     def _results(self, restype: Result) -> list[str]:
         cursor = self.conn.cursor()
-        cursor.execute(f"""
+        cursor.execute(
+            """
             SELECT tp.relative_path, tc.name
             FROM test_results tr
             JOIN test_cases tc ON tr.test_case_id = tc.test_case_id
             JOIN test_programs tp ON tc.test_program_id = tp.test_program_id
-            WHERE tr.result_type = '{restype.value}'
-        """)
+            WHERE tr.result_type = ?
+        """,
+            (restype.value,),
+        )
         results = cursor.fetchall()
         return [f"{row[0]}:{row[1]}" for row in results]
 
@@ -96,7 +99,7 @@ class FreeBSDSrcRepository(GitRepository):
             )
 
     def make(self, args: list[str], **kwargs):
-        cmd = ["make", "-C", self.path.resolve()] + args
+        cmd = ["make", "-C", self.path.resolve(), *args]
         # Don't skip the command if we need to capture output.
         skip = self._no_cmds and not kwargs.get("capture_output", False)
         return run_cmd(cmd, skip=skip, **kwargs)
@@ -1070,7 +1073,8 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
                 "/root/kyua.db",
                 "-o",
                 "/root/kyua-report.txt",
-            ] + self.tests.split()
+                *self.tests.split(),
+            ]
             vm.sendcmd(cmd)
             vm.wait_for_prompt(timeout=10 * 3600)
 
@@ -1088,7 +1092,7 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
         except FreeBSDVM.PanicException as e:
             if sys.stdin.isatty():
                 self._gdb("-ex", f"thread {e.cpuid + 1}")
-            raise e
+            raise
         return {
             "report_db_path": report_db_path,
             "report_txt_path": report_txt_path,
@@ -1741,7 +1745,7 @@ class OpenZFSTestSuiteTask(FreeBSDVMBootTask):
         except FreeBSDVM.PanicException as e:
             if sys.stdin.isatty():
                 self._gdb("-ex", f"thread {e.cpuid + 1}")
-            raise e
+            raise
         return outputs
 
 

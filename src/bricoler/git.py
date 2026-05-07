@@ -46,7 +46,7 @@ class GitRepository:
     def git(self, cmd: list[str], *args, **kwargs):
         if not self.path:
             raise ValueError("Repository has not been cloned yet")
-        return run_cmd(["git", "-C", self.path] + cmd, *args, **kwargs)
+        return run_cmd(["git", "-C", self.path, *cmd], *args, **kwargs)
 
     def checked_out_branch(self) -> str:
         return (
