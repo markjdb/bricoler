@@ -139,15 +139,19 @@ class GitCheckoutTask(Task):
     }
 
     def run(self, ctx, repotype: type[GitRepository] = GitRepository):
-        repo = repotype(self.url, Path("./src"), self.branch,
-                        shallow=self.shallow, no_cmds=self.skip)
+        repo = repotype(
+            self.url,
+            Path("./src"),
+            self.branch,
+            shallow=self.shallow,
+            no_cmds=self.skip,
+        )
         repo.update(shallow=self.shallow)
         return {"repo": repo}
 
 
 class FreeBSDSrcGitCheckoutTask(GitCheckoutTask):
-    """Clone the FreeBSD src tree, or update an existing clone.
-    """
+    """Clone the FreeBSD src tree, or update an existing clone."""
 
     name = "freebsd-src-git-checkout"
 
@@ -260,7 +264,8 @@ class FreeBSDSrcBuildTask(Task):
             args = [
                 target,
                 "-ss",
-                "-j", ctx.max_jobs,
+                "-j",
+                ctx.max_jobs,
                 "-DNO_ROOT",
                 f"DESTDIR={stagedir}",
                 f"METALOG={metalog}",
@@ -393,9 +398,12 @@ class FreeBSDVMImageTask(Task):
         with chdir(Path("./ssh-keys")):
             keyfile = Path.cwd() / "id_ed25519_root"
             if not keyfile.is_file():
-                self.run_cmd(["ssh-keygen", "-t", "ed25519", "-f", str(keyfile), "-N", ""])
-            metalog.add_file(keyfile.with_suffix(".pub"),
-                             Path("root/.ssh/authorized_keys"))
+                self.run_cmd(
+                    ["ssh-keygen", "-t", "ed25519", "-f", str(keyfile), "-N", ""]
+                )
+            metalog.add_file(
+                keyfile.with_suffix(".pub"), Path("root/.ssh/authorized_keys")
+            )
             outputs["ssh_key"] = keyfile
 
         def add_overlay(root: Path) -> None:
@@ -434,58 +442,73 @@ class FreeBSDVMImageTask(Task):
         if self.overlay is not None:
             add_overlay(self.overlay)
 
-        add_config_file("etc/ssh/sshd_config",
-                        "PermitRootLogin without-password",
-                        source=(stagedir / "etc/ssh/sshd_config"))
+        add_config_file(
+            "etc/ssh/sshd_config",
+            "PermitRootLogin without-password",
+            source=(stagedir / "etc/ssh/sshd_config"),
+        )
 
         if self.rc_kld_list is not None:
             kld_list = self.rc_kld_list.split()
         else:
             kld_list = []
-        add_config_file("etc/rc.conf",
-                        f"hostname={self.hostname}",
-                        "ifconfig_vtnet0=SYNCDHCP",
-                        "ifconfig_em0=SYNCDHCP",
-                        "defaultroute_delay=2",
-                        "sshd_enable=YES",
-                        "sshd_rsa_enable=NO",
-                        *[f'kld_list="${{kld_list}} {kld}"' for kld in kld_list],
-                        f"""
+        add_config_file(
+            "etc/rc.conf",
+            f"hostname={self.hostname}",
+            "ifconfig_vtnet0=SYNCDHCP",
+            "ifconfig_em0=SYNCDHCP",
+            "defaultroute_delay=2",
+            "sshd_enable=YES",
+            "sshd_rsa_enable=NO",
+            *[f'kld_list="${{kld_list}} {kld}"' for kld in kld_list],
+            f"""
                         zfs_enable=YES
                         zpool_reguid={zfs_pool_name}
                         zpool_upgrade={zfs_pool_name}
-                        """ if self.filesystem == FreeBSDVMImageFilesystem.ZFS else "")
+                        """
+            if self.filesystem == FreeBSDVMImageFilesystem.ZFS
+            else "",
+        )
 
-        add_config_file("etc/fstab",
-                        """
+        add_config_file(
+            "etc/fstab",
+            """
                         /dev/gpt/rootfs / ufs rw 1 1
-                        """ if self.filesystem == FreeBSDVMImageFilesystem.UFS else "",
                         """
+            if self.filesystem == FreeBSDVMImageFilesystem.UFS
+            else "",
+            """
                         none /dev/fd fdescfs rw 0 0
                         /dev/gpt/swap non swap sw 0 0
-                        """)
+                        """,
+        )
 
-        add_config_file("boot/loader.conf",
-                        "autoboot_delay=1",
-                        "beastie_disable=YES",
-                        "loader_logo=none",
-                        "console=comconsole",
-                        "kernel_options=-s" if self.single_user else "",
-                        "kern.geom.label.disk_ident.enable=0",
-                        "p9fs_load=YES",
-                        "virtio_p9fs_load=YES",
-                        "zfs_load=YES" if self.filesystem == FreeBSDVMImageFilesystem.ZFS else "",
-                        *[tunable for tunable in self.loader_tunables.split()])
+        add_config_file(
+            "boot/loader.conf",
+            "autoboot_delay=1",
+            "beastie_disable=YES",
+            "loader_logo=none",
+            "console=comconsole",
+            "kernel_options=-s" if self.single_user else "",
+            "kern.geom.label.disk_ident.enable=0",
+            "p9fs_load=YES",
+            "virtio_p9fs_load=YES",
+            "zfs_load=YES" if self.filesystem == FreeBSDVMImageFilesystem.ZFS else "",
+            *[tunable for tunable in self.loader_tunables.split()],
+        )
 
         if self.sysctls is not None:
-            add_config_file("etc/sysctl.conf",
-                            *[sysctl for sysctl in self.sysctls.split()],
-                            source=(stagedir / "etc/sysctl.conf"))
+            add_config_file(
+                "etc/sysctl.conf",
+                *[sysctl for sysctl in self.sysctls.split()],
+                source=(stagedir / "etc/sysctl.conf"),
+            )
 
         if self.sudo_users is not None:
             for user in self.sudo_users.split():
-                add_config_file(f"usr/local/etc/sudoers.d/{user}",
-                                f"{user} ALL=(ALL) NOPASSWD: ALL")
+                add_config_file(
+                    f"usr/local/etc/sudoers.d/{user}", f"{user} ALL=(ALL) NOPASSWD: ALL"
+                )
 
         add_config_file("firstboot")
 
@@ -511,13 +534,20 @@ class FreeBSDVMImageTask(Task):
             def pkg_cmd(*args, **kwargs):
                 cmd = [
                     "pkg",
-                    "-o", "ASSUME_ALWAYS_YES=true",
-                    "-o", "INSTALL_AS_USER=yes",
-                    "-o", f"ABI={pkgabi}",
-                    "-o", f"PKG_CACHEDIR={cache_dir}",
-                    "-o", f"PKG_DBDIR={db_dir}",
-                    "-o", f"OSVERSION={self.src.FreeBSD_version}",
-                    "-o", f"REPOS_DIR={repos_dir}",
+                    "-o",
+                    "ASSUME_ALWAYS_YES=true",
+                    "-o",
+                    "INSTALL_AS_USER=yes",
+                    "-o",
+                    f"ABI={pkgabi}",
+                    "-o",
+                    f"PKG_CACHEDIR={cache_dir}",
+                    "-o",
+                    f"PKG_DBDIR={db_dir}",
+                    "-o",
+                    f"OSVERSION={self.src.FreeBSD_version}",
+                    "-o",
+                    f"REPOS_DIR={repos_dir}",
                 ]
                 cmd += list(args)
                 return self.run_cmd(cmd, **kwargs)
@@ -527,7 +557,9 @@ class FreeBSDVMImageTask(Task):
             pkg_dir = stage_dir / pkg_reldir
             pkg_dir.mkdir(parents=True, exist_ok=True)
             pkg_cmd("update")
-            pkg_cmd("fetch", "--dependencies", "-o", pkg_dir, "pkg", *self.packages.split())
+            pkg_cmd(
+                "fetch", "--dependencies", "-o", pkg_dir, "pkg", *self.packages.split()
+            )
             pkg_cmd("-o", f"PKG_CACHEDIR={pkg_dir}", "clean")
             pkg_cmd("repo", pkg_dir)
 
@@ -540,24 +572,33 @@ class FreeBSDVMImageTask(Task):
             # supposed to do it, but it creates broken symlinks at the moment. See
             # https://github.com/freebsd/pkg/pull/2587
             if not Path(pkg_dir / "All" / pkg_pkg).is_file():
-                matches = glob.glob(str(pkg_dir / "All/Hashed" / f"pkg-{pkg_version}*.pkg"))
+                matches = glob.glob(
+                    str(pkg_dir / "All/Hashed" / f"pkg-{pkg_version}*.pkg")
+                )
                 if len(matches) > 0:
-                    (pkg_dir / "All" / pkg_pkg).symlink_to(Path("Hashed") / Path(matches[0]).name)
+                    (pkg_dir / "All" / pkg_pkg).symlink_to(
+                        Path("Hashed") / Path(matches[0]).name
+                    )
                 else:
-                    raise ValueError(f"Could not find fetched {pkg_pkg} in {pkg_dir / 'All'}")
+                    raise ValueError(
+                        f"Could not find fetched {pkg_pkg} in {pkg_dir / 'All'}"
+                    )
 
             add_overlay(stage_dir)
 
-            add_config_file("etc/pkg/local.conf",
-                            f"""
+            add_config_file(
+                "etc/pkg/local.conf",
+                f"""
                             local: {{
                                 url: "file:///{pkg_reldir}",
                                 signature_type: "none",
                             }}
-                            """)
+                            """,
+            )
 
-            add_config_file("etc/rc.local",
-                            f"""
+            add_config_file(
+                "etc/rc.local",
+                f"""
                             bricoler_add_pkgs()
                             {{
                                 export PATH=${{PATH}}:/usr/local/sbin:/usr/local/bin
@@ -574,7 +615,8 @@ class FreeBSDVMImageTask(Task):
                             if [ -f /firstboot ]; then
                                 bricoler_add_pkgs
                             fi
-                            """)
+                            """,
+            )
 
         metalog_path = Path.cwd() / "METALOG.mtree"
         metalog.write(metalog_path)
@@ -587,20 +629,26 @@ class FreeBSDVMImageTask(Task):
         makefs_cmd = ["makefs"]
         if self.filesystem == FreeBSDVMImageFilesystem.UFS:
             makefs_cmd += [
-                "-t", "ffs",
+                "-t",
+                "ffs",
                 "-Z",
-                "-o", "softupdates=1",
+                "-o",
+                "softupdates=1",
                 "-oversion=2",
             ]
         else:
             makefs_cmd += [
-                "-t", "zfs",
-                "-o", f"poolname={zfs_pool_name}",
-                "-o", f"bootfs={zfs_pool_name}",
+                "-t",
+                "zfs",
+                "-o",
+                f"poolname={zfs_pool_name}",
+                "-o",
+                f"bootfs={zfs_pool_name}",
             ]
         makefs_cmd += [
             "-DD",
-            "-s", f"{self.image_size}g",
+            "-s",
+            f"{self.image_size}g",
             fs_image_path,
             metalog_path,
         ]
@@ -624,11 +672,16 @@ class FreeBSDVMImageTask(Task):
 
             makefs_cmd = [
                 "makefs",
-                "-t", "msdos",
-                "-o", "fat_type=16",
-                "-o", "sectors_per_cluster=1",
-                "-o", "volume_label=EFI",
-                "-s", "4m",
+                "-t",
+                "msdos",
+                "-o",
+                "fat_type=16",
+                "-o",
+                "sectors_per_cluster=1",
+                "-o",
+                "volume_label=EFI",
+                "-s",
+                "4m",
                 esp_image_path,
                 esp_dir,
             ]
@@ -637,31 +690,42 @@ class FreeBSDVMImageTask(Task):
         bootdir = stagedir / "boot"
         mkimg_cmd = [
             "mkimg",
-            "-f", "raw",
-            "-S", 512,
-            "-o", vm_image_path,
+            "-f",
+            "raw",
+            "-S",
+            512,
+            "-o",
+            vm_image_path,
         ]
         if machine.startswith("powerpc/"):
             mkimg_cmd += [
-                "-s", "mbr",
-                "-a", "1",
-                "-p", f"prepboot:={bootdir / 'boot1.elf'}"
-                "-p", f"freebsd:={vm_image_path}",
+                "-s",
+                "mbr",
+                "-a",
+                "1",
+                "-p",
+                f"prepboot:={bootdir / 'boot1.elf'}-p",
+                f"freebsd:={vm_image_path}",
             ]
         else:
             mkimg_cmd += ["-s", "gpt"]
             if machine.startswith("amd64/") or machine.startswith("i386/"):
                 mkimg_cmd += [
-                    "-b", f"{bootdir / 'pmbr'}",
-                    "-p", f"freebsd-boot/bootfs:={bootdir / 'gptboot'}",
+                    "-b",
+                    f"{bootdir / 'pmbr'}",
+                    "-p",
+                    f"freebsd-boot/bootfs:={bootdir / 'gptboot'}",
                 ]
             if has_efi:
                 mkimg_cmd += [
-                    "-p", f"efi:={esp_image_path}",
+                    "-p",
+                    f"efi:={esp_image_path}",
                 ]
             mkimg_cmd += [
-                "-p", f"freebsd-swap/swap::{self.swap_size}",
-                "-p", f"freebsd-{self.filesystem.value}/rootfs:={fs_image_path}",
+                "-p",
+                f"freebsd-swap/swap::{self.swap_size}",
+                "-p",
+                f"freebsd-{self.filesystem.value}/rootfs:={fs_image_path}",
             ]
 
         self.run_cmd(mkimg_cmd)
@@ -695,7 +759,9 @@ class FreeBSDVMBootTask(Task):
             description="Hypervisor to use for running the VM",
             type=VMHypervisor,
             # XXX-MJ should somehow default to qemu for non-native images
-            default=lambda: VMHypervisor.BHYVE if BhyveRun.canrun() else VMHypervisor.QEMU,
+            default=lambda: (
+                VMHypervisor.BHYVE if BhyveRun.canrun() else VMHypervisor.QEMU
+            ),
         ),
         "interactive": TaskParameter(
             description="Run the VM in interactive mode",
@@ -725,9 +791,12 @@ class FreeBSDVMBootTask(Task):
 
     def run(self, ctx):
         match self.hypervisor:
-            case VMHypervisor.BHYVE: cls = BhyveRun
-            case VMHypervisor.QEMU: cls = QEMURun
-            case VMHypervisor.RVVM: cls = RVVMRun
+            case VMHypervisor.BHYVE:
+                cls = BhyveRun
+            case VMHypervisor.QEMU:
+                cls = QEMURun
+            case VMHypervisor.RVVM:
+                cls = RVVMRun
         if self.p9_shares:
             p9_shares = [tuple(desc.split(":")) for desc in self.p9_shares.split(",")]
         else:
@@ -774,10 +843,14 @@ class FreeBSDVMBootTask(Task):
         port = int(portstr)
         gdb_cmd = [
             "gdb",
-            "-ex", f"set sysroot {Path.cwd() / sysroot}",
-            "-ex", f"file {sysroot / 'boot/kernel/kernel'}",
-            "-ex", f"source {sysroot / 'usr/lib/debug/boot/kernel/kernel-gdb.py'}",
-            "-ex", f"target remote {host}:{port}",
+            "-ex",
+            f"set sysroot {Path.cwd() / sysroot}",
+            "-ex",
+            f"file {sysroot / 'boot/kernel/kernel'}",
+            "-ex",
+            f"source {sysroot / 'usr/lib/debug/boot/kernel/kernel-gdb.py'}",
+            "-ex",
+            f"target remote {host}:{port}",
         ]
         gdb_cmd += args
         self.run_cmd(gdb_cmd, process_group=0)
@@ -796,13 +869,18 @@ class FreeBSDVMBootTask(Task):
 
 
 class FreeBSDRegressionTestSuiteBuildTask(FreeBSDSrcBuildAndInstallTask):
-    make_options = " ".join([
-        # Remove some optional components to speed up the build.
-        "WITHOUT_CLANG=", "WITHOUT_LLD=", "WITHOUT_LLDB=", "WITHOUT_LIB32=",
-        # The in-tree ZFS tests take a long time to run and aren't very useful
-        # outside of ZFS development.
-        "WITHOUT_ZFS_TESTS=",
-    ])
+    make_options = " ".join(
+        [
+            # Remove some optional components to speed up the build.
+            "WITHOUT_CLANG=",
+            "WITHOUT_LLD=",
+            "WITHOUT_LLDB=",
+            "WITHOUT_LIB32=",
+            # The in-tree ZFS tests take a long time to run and aren't very useful
+            # outside of ZFS development.
+            "WITHOUT_ZFS_TESTS=",
+        ]
+    )
 
     def run(self, ctx):
         outputs = super().run(ctx)
@@ -816,77 +894,105 @@ class FreeBSDRegressionTestSuiteBuildTask(FreeBSDSrcBuildAndInstallTask):
 
 
 class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
-    loader_tunables = " ".join([
-        "net.inet.ip.fw.default_to_accept=1",
-        "net.inet.ipf.jail_allowed=1",
-        "net.fibs=8",
-    ])
+    loader_tunables = " ".join(
+        [
+            "net.inet.ip.fw.default_to_accept=1",
+            "net.inet.ipf.jail_allowed=1",
+            "net.fibs=8",
+        ]
+    )
 
-    packages = " ".join([
-        "coreutils",
-        "filesystems/ext2",
-        "gdb",
-        "git-lite",
-        "gtar",
-        "isc-dhcp44-server",
-        "jq",
-        "ksh93",
-        "llvm",
-        "ndisc6",
-        "net/py-dpkt",
-        "net/tcptestsuite",
-        "nist-kat",
-        "nmap",
-        "openvpn",
-        "perl5",
-        "pimd",
-        "porch",
-        "python",
-        "python3",
-        "devel/py-pytest",
-        "devel/py-twisted",
-        "net/scapy",
-        "security/setaudit",
-        "sg3_utils",
-        "sudo",
-    ])
+    packages = " ".join(
+        [
+            "coreutils",
+            "filesystems/ext2",
+            "gdb",
+            "git-lite",
+            "gtar",
+            "isc-dhcp44-server",
+            "jq",
+            "ksh93",
+            "llvm",
+            "ndisc6",
+            "net/py-dpkt",
+            "net/tcptestsuite",
+            "nist-kat",
+            "nmap",
+            "openvpn",
+            "perl5",
+            "pimd",
+            "porch",
+            "python",
+            "python3",
+            "devel/py-pytest",
+            "devel/py-twisted",
+            "net/scapy",
+            "security/setaudit",
+            "sg3_utils",
+            "sudo",
+        ]
+    )
 
-    rc_kld_list = " ".join([
-        "accf_data", "accf_dns", "accf_http", "accf_tls",
-        "blake2",
-        "carp",
-        "cfiscsi",
-        "cryptodev",
-        "ctl",
-        "dummymbuf",
-        "dummynet",
-        "fusefs",
-        "if_bridge", "if_enc", "if_epair", "if_geneve", "if_gre", "if_lagg", "if_ovpn", "if_stf", "if_wg",
-        "ipdivert",
-        "ipfw", "ipfw_nat", "ipfw_nptv6",
-        "ip_mroute", "ip6_mroute",
-        "ipl",
-        "ipsec",
-        "mac_bsdextended", "mac_ipacl", "mac_portacl", "mqueuefs",
-        "pf", "pflog", "pflow", "pfsync",
-        "sctp",
-        "snd_dummy",
-        "tarfs",
-        "tcpmd5",
-        "unionfs",
-        "zfs",
-    ])
+    rc_kld_list = " ".join(
+        [
+            "accf_data",
+            "accf_dns",
+            "accf_http",
+            "accf_tls",
+            "blake2",
+            "carp",
+            "cfiscsi",
+            "cryptodev",
+            "ctl",
+            "dummymbuf",
+            "dummynet",
+            "fusefs",
+            "if_bridge",
+            "if_enc",
+            "if_epair",
+            "if_geneve",
+            "if_gre",
+            "if_lagg",
+            "if_ovpn",
+            "if_stf",
+            "if_wg",
+            "ipdivert",
+            "ipfw",
+            "ipfw_nat",
+            "ipfw_nptv6",
+            "ip_mroute",
+            "ip6_mroute",
+            "ipl",
+            "ipsec",
+            "mac_bsdextended",
+            "mac_ipacl",
+            "mac_portacl",
+            "mqueuefs",
+            "pf",
+            "pflog",
+            "pflow",
+            "pfsync",
+            "sctp",
+            "snd_dummy",
+            "tarfs",
+            "tcpmd5",
+            "unionfs",
+            "zfs",
+        ]
+    )
 
-    sysctls = " ".join([
-        "kern.ipc.tls.enable=1",
-        "vfs.aio.enable_unsafe=1",
-        "kern.crypto.allow_soft=1",
-        "vm.panic_on_oom=1",
-        "security.mac.bsdextended.enabled=0",
-        "security.mac.ipacl.ipv4=0",
-        "security.mac.ipacl.ipv6=0",
-        "security.mac.portacl.enabled=0",
-    ])
+    sysctls = " ".join(
+        [
+            "kern.ipc.tls.enable=1",
+            "vfs.aio.enable_unsafe=1",
+            "kern.crypto.allow_soft=1",
+            "vm.panic_on_oom=1",
+            "security.mac.bsdextended.enabled=0",
+            "security.mac.ipacl.ipv4=0",
+            "security.mac.ipacl.ipv6=0",
+            "security.mac.portacl.enabled=0",
+        ]
+    )
 
     inputs = {
         "build": FreeBSDRegressionTestSuiteBuildTask,
@@ -894,16 +1000,23 @@ class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
 
     def run(self, ctx):
         metalog = self.build.metalog
-        metalog.add_symlink(symlink_dest="/usr/local/bin/clang", path_in_image="usr/bin/cc")
-        metalog.add_symlink(symlink_dest="/usr/local/bin/ld.lld", path_in_image="usr/bin/ld")
-        metalog.add_symlink(symlink_dest="/usr/local/bin/clang-cpp", path_in_image="usr/bin/cpp")
-        metalog.add_symlink(symlink_dest="/usr/local/bin/clang++", path_in_image="usr/bin/c++")
+        metalog.add_symlink(
+            symlink_dest="/usr/local/bin/clang", path_in_image="usr/bin/cc"
+        )
+        metalog.add_symlink(
+            symlink_dest="/usr/local/bin/ld.lld", path_in_image="usr/bin/ld"
+        )
+        metalog.add_symlink(
+            symlink_dest="/usr/local/bin/clang-cpp", path_in_image="usr/bin/cpp"
+        )
+        metalog.add_symlink(
+            symlink_dest="/usr/local/bin/clang++", path_in_image="usr/bin/c++"
+        )
         return super().run(ctx)
 
 
 class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
-    """Boot a virtual machine and run the FreeBSD regression test suite.
-    """
+    """Boot a virtual machine and run the FreeBSD regression test suite."""
 
     name = "freebsd-regression-test-suite"
 
@@ -927,7 +1040,7 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
         ),
         "tests": TaskParameter(
             description="A space-separated list of test cases or test suites to run, "
-                        "or the empty string to run all tests",
+            "or the empty string to run all tests",
             default="",
         ),
     }
@@ -949,13 +1062,17 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
             vm.boot_to_login()
             cmd = [
                 "/usr/tests/run-kyua",
-                "-c", str(self.count),
-                "-j", str(self.parallelism),
-                "-r", "/root/kyua.db",
-                "-o", "/root/kyua-report.txt",
+                "-c",
+                str(self.count),
+                "-j",
+                str(self.parallelism),
+                "-r",
+                "/root/kyua.db",
+                "-o",
+                "/root/kyua-report.txt",
             ] + self.tests.split()
             vm.sendcmd(cmd)
-            vm.wait_for_prompt(timeout=10*3600)
+            vm.wait_for_prompt(timeout=10 * 3600)
 
             report_db_path = Path.cwd() / "kyua.db"
             report_txt_path = Path.cwd() / "kyua-report.txt"
@@ -1012,7 +1129,9 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
         failing_tests = db.failed() + db.broken()
         flaky = []
         if failing_tests:
-            info(f"Re-running {len(failing_tests)} failed/broken test case(s) to check for flakiness")
+            info(
+                f"Re-running {len(failing_tests)} failed/broken test case(s) to check for flakiness"
+            )
 
             with chdir(Path("./flaky-check")):
                 self.parallelism = 1
@@ -1035,7 +1154,7 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
 
         subject = f"FreeBSD regression test suite results ({self.src.repo.checked_out_branch()})"
 
-        report  = f"Branch: {self.src.repo.checked_out_branch()}\n"
+        report = f"Branch: {self.src.repo.checked_out_branch()}\n"
         report += f"Commit: {self.src.repo.checked_out_revision()}\n"
         report += "The test run completed successfully, with "
         report += f"{len(db.passed())} passed, "
@@ -1061,26 +1180,32 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
 
 
 class FreeBSDDTraceTestSuiteBuildTask(FreeBSDRegressionTestSuiteBuildTask):
-    make_options = FreeBSDRegressionTestSuiteBuildTask.make_options + " WITH_DTRACE_TESTS="
+    make_options = (
+        FreeBSDRegressionTestSuiteBuildTask.make_options + " WITH_DTRACE_TESTS="
+    )
 
 
 class FreeBSDDTraceTestSuiteVMImageTask(FreeBSDRegressionTestSuiteVMImageTask):
-    packages = " ".join([
-        "binutils",
-        "jq",
-        "libxml2",
-        "llvm",
-        "nmap",
-        "pdksh",
-        "perl5",
-    ])
+    packages = " ".join(
+        [
+            "binutils",
+            "jq",
+            "libxml2",
+            "llvm",
+            "nmap",
+            "pdksh",
+            "perl5",
+        ]
+    )
 
-    rc_kld_list = " ".join([
-        "dtraceall",
-        "dtrace_test",
-        "kinst",
-        "sctp",
-    ])
+    rc_kld_list = " ".join(
+        [
+            "dtraceall",
+            "dtrace_test",
+            "kinst",
+            "sctp",
+        ]
+    )
 
     inputs = {
         "build": FreeBSDDTraceTestSuiteBuildTask,
@@ -1088,8 +1213,7 @@ class FreeBSDDTraceTestSuiteVMImageTask(FreeBSDRegressionTestSuiteVMImageTask):
 
 
 class FreeBSDDTraceTestSuiteTask(FreeBSDRegressionTestSuiteTask):
-    """Boot a virtual machine and run the FreeBSD DTrace regression test suite.
-    """
+    """Boot a virtual machine and run the FreeBSD DTrace regression test suite."""
 
     name = "freebsd-dtrace-test-suite"
 
@@ -1163,12 +1287,14 @@ class EC2Provider:
             if not keyfile.is_file():
                 key_pair = self.resource.create_key_pair(
                     KeyName=key_name,
-                    TagSpecifications=[{
-                        "ResourceType": "key-pair",
-                        "Tags": [
-                            {"Key": "bricoler", "Value": tag_value},
-                        ],
-                    }],
+                    TagSpecifications=[
+                        {
+                            "ResourceType": "key-pair",
+                            "Tags": [
+                                {"Key": "bricoler", "Value": tag_value},
+                            ],
+                        }
+                    ],
                 )
                 private_key = key_pair.key_material
                 with keyfile.open("w", encoding="utf-8") as f:
@@ -1195,17 +1321,21 @@ class EC2Provider:
             MinCount=1,
             MaxCount=1,
             BlockDeviceMappings=bdm,
-            TagSpecifications=[{
-                "ResourceType": "instance",
-                "Tags": [{"Key": "bricoler", "Value": tag_value}],
-            }],
+            TagSpecifications=[
+                {
+                    "ResourceType": "instance",
+                    "Tags": [{"Key": "bricoler", "Value": tag_value}],
+                }
+            ],
         )
         instance = instances[0]
         instance.wait_until_running()
         instance.reload()
 
         timeout = 300
-        info(f"Waiting up to {timeout} seconds for instance {instance.id} to become ready")
+        info(
+            f"Waiting up to {timeout} seconds for instance {instance.id} to become ready"
+        )
         start_time = time.time()
         ec2_client = instance.meta.client
         while time.time() - start_time < timeout:
@@ -1249,7 +1379,9 @@ class EC2Provider:
         return images[0]
 
     @functools.cache
-    def freebsd_amis(self, owners: tuple[str] = ("aws-marketplace",)) -> list[dict[str, str]]:
+    def freebsd_amis(
+        self, owners: tuple[str] = ("aws-marketplace",)
+    ) -> list[dict[str, str]]:
         response = self.client.describe_images(
             Filters=[
                 {"Name": "name", "Values": ["FreeBSD*"]},
@@ -1280,8 +1412,7 @@ class EC2MetaTask(Task):
 
 
 class EC2LaunchTask(EC2MetaTask):
-    """Launch an EC2 instance accessible via ssh.
-    """
+    """Launch an EC2 instance accessible via ssh."""
 
     name = "ec2-launch-freebsd"
 
@@ -1344,8 +1475,7 @@ class EC2CleanTask(EC2MetaTask):
 
 
 class EC2ListAMIsTask(EC2MetaTask):
-    """List FreeBSD AMIs available from the specified owner.
-    """
+    """List FreeBSD AMIs available from the specified owner."""
 
     name = "ec2-list-freebsd-amis"
 
@@ -1364,8 +1494,7 @@ class EC2ListAMIsTask(EC2MetaTask):
 
 
 class EC2ListInstanceTypesTask(EC2MetaTask):
-    """List all EC2 instance types in a given region.
-    """
+    """List all EC2 instance types in a given region."""
 
     name = "ec2-list-instance-types"
 
@@ -1393,8 +1522,7 @@ class EC2ListInstanceTypesTask(EC2MetaTask):
 
 
 class OpenZFSGitCheckoutTask(GitCheckoutTask):
-    """Clone the OpenZFS repository, or update an existing clone.
-    """
+    """Clone the OpenZFS repository, or update an existing clone."""
 
     name = "openzfs-git-checkout"
 
@@ -1407,8 +1535,7 @@ class OpenZFSGitCheckoutTask(GitCheckoutTask):
 
 
 class OpenZFSBuildTask(Task):
-    """Build OpenZFS from a Git repository checkout.
-    """
+    """Build OpenZFS from a Git repository checkout."""
 
     name = "openzfs-build"
 
@@ -1443,13 +1570,15 @@ class OpenZFSBuildTask(Task):
             if not Path("./configure").is_file() or self.clean:
                 self.run_cmd(["./autogen.sh"])
             if not Path("./Makefile").is_file() or self.clean:
-                self.run_cmd([
-                    "./configure",
-                    "MAKE=gmake",
-                    "--with-config=user",
-                    "--enable-invariants",
-                    "--enable-debug",
-                ])
+                self.run_cmd(
+                    [
+                        "./configure",
+                        "MAKE=gmake",
+                        "--with-config=user",
+                        "--enable-invariants",
+                        "--enable-debug",
+                    ]
+                )
             self.run_cmd(["gmake", "-j", str(ctx.max_jobs)])
             self.run_cmd(["gmake", "install", f"DESTDIR={user_stagedir}"])
 
@@ -1457,25 +1586,34 @@ class OpenZFSBuildTask(Task):
         with chdir(self.src.repo.path / "module"):
             if self.clean:
                 self.run_cmd(["make", "-f", "Makefile.bsd", "clean"])
-            self.run_cmd([
-                "make", "-s",
-                "-j", str(ctx.max_jobs),
-                "-f", "Makefile.bsd",
-                "CC=cc",
-                f"SYSDIR={self.sysdir}",
-                "WITH_DEBUG=true",
-            ])
-            self.run_cmd([
-                "make", "-s",
-                "-f", "Makefile.bsd",
-                "install",
-                f"KMODOWN={os.geteuid()}",
-                f"KMODGRP={os.getegid()}",
-                "KMODDIR=",
-                "DEBUGDIR=",
-                f"DESTDIR={kmod_stagedir}",
-                "WITHOUT_DEBUG_FILES=",
-            ])
+            self.run_cmd(
+                [
+                    "make",
+                    "-s",
+                    "-j",
+                    str(ctx.max_jobs),
+                    "-f",
+                    "Makefile.bsd",
+                    "CC=cc",
+                    f"SYSDIR={self.sysdir}",
+                    "WITH_DEBUG=true",
+                ]
+            )
+            self.run_cmd(
+                [
+                    "make",
+                    "-s",
+                    "-f",
+                    "Makefile.bsd",
+                    "install",
+                    f"KMODOWN={os.geteuid()}",
+                    f"KMODGRP={os.getegid()}",
+                    "KMODDIR=",
+                    "DEBUGDIR=",
+                    f"DESTDIR={kmod_stagedir}",
+                    "WITHOUT_DEBUG_FILES=",
+                ]
+            )
 
         return {
             "user_stagedir": user_stagedir,
@@ -1484,11 +1622,13 @@ class OpenZFSBuildTask(Task):
 
 
 class OpenZFSTestSuiteFreeBSDSrcBuildTask(FreeBSDSrcBuildAndInstallTask):
-    make_options = " ".join([
-        "WITHOUT_LIB32=",
-        "WITHOUT_TOOLCHAIN=",
-        "WITHOUT_ZFS=",
-    ])
+    make_options = " ".join(
+        [
+            "WITHOUT_LIB32=",
+            "WITHOUT_TOOLCHAIN=",
+            "WITHOUT_ZFS=",
+        ]
+    )
 
 
 class OpenZFSTestSuiteBuildTask(OpenZFSBuildTask):
@@ -1510,19 +1650,21 @@ class OpenZFSTestSuiteVMImageTask(FreeBSDVMImageTask):
 
     image_size = 50
 
-    packages = " ".join([
-        "bash",
-        "devel/py-sysctl",
-        "fio",
-        "jq",
-        "ksh93",
-        "libunwind",
-        "pamtester",
-        "python3",
-        "rsync",
-        "sudo",
-        "xxhash",
-    ])
+    packages = " ".join(
+        [
+            "bash",
+            "devel/py-sysctl",
+            "fio",
+            "jq",
+            "ksh93",
+            "libunwind",
+            "pamtester",
+            "python3",
+            "rsync",
+            "sudo",
+            "xxhash",
+        ]
+    )
 
     sudo_users = "tests"
 
@@ -1534,10 +1676,10 @@ class OpenZFSTestSuiteVMImageTask(FreeBSDVMImageTask):
         mtree = self.build.metalog
 
         kmoddir = self.build.kmod_stagedir
-        mtree.add_file(kmoddir / "openzfs.ko",
-                       Path("boot/kernel/openzfs.ko"))
-        mtree.add_file(kmoddir / "openzfs.ko.debug",
-                       Path("usr/lib/debug/boot/kernel/openzfs.ko"))
+        mtree.add_file(kmoddir / "openzfs.ko", Path("boot/kernel/openzfs.ko"))
+        mtree.add_file(
+            kmoddir / "openzfs.ko.debug", Path("usr/lib/debug/boot/kernel/openzfs.ko")
+        )
 
         def add_overlay(root: Path) -> None:
             if not root.is_dir():
@@ -1561,8 +1703,7 @@ class OpenZFSTestSuiteVMImageTask(FreeBSDVMImageTask):
 
 
 class OpenZFSTestSuiteTask(FreeBSDVMBootTask):
-    """Boot a virtual machine and run the OpenZFS test suite (ZTS).
-    """
+    """Boot a virtual machine and run the OpenZFS test suite (ZTS)."""
 
     name = "openzfs-test-suite"
 
@@ -1593,7 +1734,7 @@ class OpenZFSTestSuiteTask(FreeBSDVMBootTask):
             vm.boot_to_login()
             cmd = "/usr/local/share/zfs/zfs-tests.sh -v"
             vm.sendline(f'DISKS="vtbd1 vtbd2 vtbd3" su -m tests -c "{cmd}"')
-            vm.wait_for_prompt(timeout=10*3600)
+            vm.wait_for_prompt(timeout=10 * 3600)
 
             ssh = SSHCommandRunner(vm.vmrun.ssh_addr, vm.vmrun.ssh_key)
             ssh.scp_from("/var/tmp/test_results/current", Path.cwd() / "test_results")
@@ -1605,8 +1746,7 @@ class OpenZFSTestSuiteTask(FreeBSDVMBootTask):
 
 
 class SyzkallerGitCheckoutTask(GitCheckoutTask):
-    """Clone the syzkaller repository, or update an existing clone.
-    """
+    """Clone the syzkaller repository, or update an existing clone."""
 
     name = "syzkaller-git-checkout"
 
@@ -1620,8 +1760,7 @@ class SyzkallerGitCheckoutTask(GitCheckoutTask):
 
 
 class SyzkallerBuildTask(Task):
-    """Build syzkaller from a Git repository checkout.
-    """
+    """Build syzkaller from a Git repository checkout."""
 
     name = "syzkaller-build"
 
@@ -1656,11 +1795,13 @@ class SyzkallerBuildTask(Task):
 class SyzkallerFuzzFreeBSDBuildTask(FreeBSDSrcBuildAndInstallTask):
     def run(self, ctx):
         with open("SYZKALLER", "w") as f:
-            f.write("# Added by bricoler\n"
-                   f"include {self.kernel_config}\n"
-                    "ident SYZKALLER\n"
-                    "options COVERAGE\n"
-                    "options KCOV\n")
+            f.write(
+                "# Added by bricoler\n"
+                f"include {self.kernel_config}\n"
+                "ident SYZKALLER\n"
+                "options COVERAGE\n"
+                "options KCOV\n"
+            )
             f.flush()
             self.kernel_config = str(Path.cwd() / "SYZKALLER")
             return super().run(ctx)
@@ -1673,8 +1814,7 @@ class SyzkallerFuzzFreeBSDVMImageTask(FreeBSDVMImageTask):
 
 
 class SyzkallerFuzzFreeBSDTask(Task):
-    """Run syzkaller against a FreeBSD target
-    """
+    """Run syzkaller against a FreeBSD target"""
 
     name = "syzkaller-fuzz-freebsd"
 
@@ -1721,9 +1861,11 @@ class SyzkallerFuzzFreeBSDTask(Task):
         if self.hypervisor == VMHypervisor.BHYVE:
             if self.zfs_dataset is None:
                 raise ValueError("zfs_dataset parameter is required when using bhyve")
+
             def zfs_get(dataset, prop):
                 cmd = ["zfs", "get", "-H", "-o", "value", prop, dataset]
                 return self.run_cmd(cmd, capture_output=True).stdout.decode().strip()
+
             mountpoint = zfs_get(self.zfs_dataset, "mountpoint")
             if mountpoint == "none":
                 raise ValueError(f"ZFS dataset {self.zfs_dataset} is not mounted")
@@ -1760,7 +1902,8 @@ class SyzkallerFuzzFreeBSDTask(Task):
                 "cpu": self.vm_ncpu,
                 "mem": str(self.vm_memory) + "M",
                 "count": self.vm_count,
-            } | hypervisor_args,
+            }
+            | hypervisor_args,
         }
 
         # Write the parameters to a JSON config file.
@@ -1771,6 +1914,7 @@ class SyzkallerFuzzFreeBSDTask(Task):
         if self.debug:
             cmd.append("-debug")
         self.run_cmd(cmd)
+
 
 #
 # Features to add:
@@ -1825,8 +1969,8 @@ def main() -> int:
             print("Parameters:")
             width = max(len(name) for name in sched.parameters.keys()) + 2
             for name, param in sched.parameters.items():
-                print(f"{name+':':<{width}} {param[0].description}")
-                print(f"{'':{width+1}}{param[1]!s}")
+                print(f"{name + ':':<{width}} {param[0].description}")
+                print(f"{'':{width + 1}}{param[1]!s}")
     elif args.list:
         for task in sched.tasks.values():
             for name in task.__class__.get_parameter_keys():

@@ -33,49 +33,58 @@ class Config:
 
     def __init__(self) -> None:
         self.files_dir = Path(sys.argv[0]).parent.resolve() / "files"
-        self.workdir = Path(os.environ.get("BRICOLER_WORKDIR",
-                                           Path.home() / "bricoler")).resolve()
+        self.workdir = Path(
+            os.environ.get("BRICOLER_WORKDIR", Path.home() / "bricoler")
+        ).resolve()
 
         parser = argparse.ArgumentParser(prog="bricoler")
         parser.add_argument(
-            "-a", "--alias",
+            "-a",
+            "--alias",
             action="store",
-            help="define an alias for the current command-line invocation")
+            help="define an alias for the current command-line invocation",
+        )
         parser.add_argument(
-            "-j", "--max-jobs",
+            "-j",
+            "--max-jobs",
             type=int,
             metavar="N",
             default=self.max_jobs,
-            help="set the maximum number of concurrent jobs (default: number of CPUs)")
+            help="set the maximum number of concurrent jobs (default: number of CPUs)",
+        )
         parser.add_argument(
-            "-l", "--list",
-            action="store_true",
-            help=argparse.SUPPRESS)  # only really meant for completion handlers
+            "-l", "--list", action="store_true", help=argparse.SUPPRESS
+        )  # only really meant for completion handlers
         parser.add_argument(
             "--mail-from",
             metavar="ADDR",
-            help="set the email address to send notifications from")
+            help="set the email address to send notifications from",
+        )
         parser.add_argument(
             "--mail-to",
             metavar="ADDR",
-            help="set the email address to send notifications to")
+            help="set the email address to send notifications to",
+        )
         parser.add_argument(
-            "-s", "--show",
+            "-s",
+            "--show",
             action="store_true",
-            help="show all available tasks or task parameters")
+            help="show all available tasks or task parameters",
+        )
         parser.add_argument(
-            "-S", "--skip",
+            "-S",
+            "--skip",
             action="store_true",
-            help="skip execution of dependent tasks")
+            help="skip execution of dependent tasks",
+        )
         parser.add_argument(
-            "-w", "--workdir",
+            "-w",
+            "--workdir",
             metavar="DIR",
             default=self.workdir,
-            help="set the work directory (default: $BRICOLER_WORKDIR or ${HOME}/bricoler)")
-        parser.add_argument(
-            "task",
-            nargs="?",
-            help="the task to run")
+            help="set the work directory (default: $BRICOLER_WORKDIR or ${HOME}/bricoler)",
+        )
+        parser.add_argument("task", nargs="?", help="the task to run")
         self.parser = parser
 
     @property
@@ -87,11 +96,13 @@ class Config:
         self.config_file_object["aliases"] = [
             a for a in self.config_file_object["aliases"] if a["alias"] != name
         ]
-        self.config_file_object["aliases"].append({
-            "alias": name,
-            "task": self.task.name,
-            "parameters": self.command_line_parameters,
-        })
+        self.config_file_object["aliases"].append(
+            {
+                "alias": name,
+                "task": self.task.name,
+                "parameters": self.command_line_parameters,
+            }
+        )
         with self.config_path.open("w") as f:
             json.dump(self.config_file_object, fp=f, indent=4)
 
@@ -121,13 +132,17 @@ class Config:
         except FileNotFoundError:
             # Populate it with some initial structure.
             with self.config_path.open("w") as f:
-                json.dump({
-                    "aliases": [],
-                    "mail_from": "",
-                    "mail_to": "",
-                    "uuid": str(uuid.uuid4()),
-                    "version": Config.CONFIG_FILE_VERSION,
-                }, fp=f, indent=4)
+                json.dump(
+                    {
+                        "aliases": [],
+                        "mail_from": "",
+                        "mail_to": "",
+                        "uuid": str(uuid.uuid4()),
+                        "version": Config.CONFIG_FILE_VERSION,
+                    },
+                    fp=f,
+                    indent=4,
+                )
         finally:
             with self.config_path.open("r") as f:
                 try:
@@ -174,7 +189,7 @@ class Config:
         for arg in args:
             if not arg.startswith("--"):
                 if action is None:
-                    action = args[args.index(arg):]
+                    action = args[args.index(arg) :]
                     break
             arg = arg[2:]
             if "=" not in arg:

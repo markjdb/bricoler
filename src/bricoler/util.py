@@ -18,18 +18,16 @@ from pathlib import Path
 
 
 class EmailReport:
-    def __init__(self, subject: str, body: str, attachments: list[Path] | None = None) -> None:
+    def __init__(
+        self, subject: str, body: str, attachments: list[Path] | None = None
+    ) -> None:
         self.subject = subject
         self.body = body
         self.attachments = attachments or []
 
     def send(self, mail_to: str, mail_from: str) -> None:
         msg = (
-            f"From: {mail_from}\n"
-            f"To: {mail_to}\n"
-            f"Subject: {self.subject}\n"
-            f"\n"
-            f"{self.body}"
+            f"From: {mail_from}\nTo: {mail_to}\nSubject: {self.subject}\n\n{self.body}"
         )
 
         for attachment in self.attachments:
@@ -45,14 +43,14 @@ class EmailReport:
 
 
 class ANSIColour(Enum):
-    BLACK = 30,
-    RED = 31,
-    GREEN = 32,
-    YELLOW = 33,
-    BLUE = 34,
-    MAGENTA = 35,
-    CYAN = 36,
-    WHITE = 37,
+    BLACK = (30,)
+    RED = (31,)
+    GREEN = (32,)
+    YELLOW = (33,)
+    BLUE = (34,)
+    MAGENTA = (35,)
+    CYAN = (36,)
+    WHITE = (37,)
 
 
 def colour(text: str, colour: ANSIColour) -> str:

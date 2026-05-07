@@ -93,9 +93,11 @@ class TaskMeta(ABCMeta):
                 f"Task '{name}' has overlapping names: {', '.join(overlap)}",
             )
         # Make sure that none of the names overlap with reserved names.
-        overlap = (inputs.keys() & mcs._reserved_names) | \
-                  (outputs.keys() & mcs._reserved_names) | \
-                  (parameters.keys() & mcs._reserved_names)
+        overlap = (
+            (inputs.keys() & mcs._reserved_names)
+            | (outputs.keys() & mcs._reserved_names)
+            | (parameters.keys() & mcs._reserved_names)
+        )
         if len(overlap) > 0:
             raise ValueError(
                 f"Task '{name}' uses reserved names: {', '.join(overlap)}",
@@ -119,7 +121,9 @@ class TaskMeta(ABCMeta):
     def _validate_anonymous_task(mcs, cls: type[Task], namespace) -> None:
         mcs._validate_common(cls, namespace)
 
-        invalid_keys = mcs._reserved_names & (set(namespace.keys()) - {"run", "inputs", "outputs"})
+        invalid_keys = mcs._reserved_names & (
+            set(namespace.keys()) - {"run", "inputs", "outputs"}
+        )
         if len(invalid_keys) > 0:
             raise ValueError(
                 f"Anonymous task '{cls.__name__}' cannot define: {', '.join(invalid_keys)}",
@@ -130,10 +134,14 @@ class TaskMeta(ABCMeta):
 
         for table in ["actions", "inputs", "parameters"]:
             chained = f"_chained_{table}"
-            setattr(cls,
-                    chained,
-                    ChainMap(getattr(cls, table),
-                             *[getattr(b, chained) for b in bases if hasattr(b, chained)]))
+            setattr(
+                cls,
+                chained,
+                ChainMap(
+                    getattr(cls, table),
+                    *[getattr(b, chained) for b in bases if hasattr(b, chained)],
+                ),
+            )
 
         if not inspect.isabstract(cls):
             task_name = namespace.get("name")
@@ -220,9 +228,9 @@ class TaskParameterBinding:
     task: str | None
 
     class BindingType(Enum):
-        DEFAULT = 1,
-        COMMAND_LINE = 2,
-        OVERRIDDEN = 3,
+        DEFAULT = (1,)
+        COMMAND_LINE = (2,)
+        OVERRIDDEN = (3,)
 
     def __init__(self, value, source: BindingType, task=None) -> None:
         self.value = value
@@ -258,14 +266,19 @@ class Task(ABC, metaclass=TaskMeta):
         for name, param in self._chained_parameters.items():
             # Callable defaults are handled when assembling the schedule.
             if not callable(param.default):
-                self.bind({name: param.default},
-                          TaskParameterBinding.BindingType.DEFAULT)
+                self.bind(
+                    {name: param.default}, TaskParameterBinding.BindingType.DEFAULT
+                )
         for name in dir(self.__class__):
             if name in self._chained_parameters:
-                self.bind({name: getattr(self, name)},
-                          TaskParameterBinding.BindingType.OVERRIDDEN)
+                self.bind(
+                    {name: getattr(self, name)},
+                    TaskParameterBinding.BindingType.OVERRIDDEN,
+                )
 
-    def bind(self, params: dict[str, Any], source: TaskParameterBinding.BindingType) -> None:
+    def bind(
+        self, params: dict[str, Any], source: TaskParameterBinding.BindingType
+    ) -> None:
         for name, param in params.items():
             if name not in self._chained_parameters:
                 raise ValueError(
@@ -420,10 +433,14 @@ class TaskSchedule:
         # to do things like list unbound parameters in a schedule.
         for node in self.schedule:
             required = {
-                name for name, param in node.task._chained_parameters.items() if param.required
+                name
+                for name, param in node.task._chained_parameters.items()
+                if param.required
             }
             bindings = {
-                name for name, param in node.task.bindings.items() if param.value is not None
+                name
+                for name, param in node.task.bindings.items()
+                if param.value is not None
             }
             missing = required - bindings
             if len(missing) > 0:
@@ -454,7 +471,8 @@ class TaskSchedule:
             for name in node.task._chained_parameters.keys():
                 val = node.task.bindings.get(name, None)
                 result[f"{node.task.name}/{name}"] = (
-                    node.task._chained_parameters[name], val,
+                    node.task._chained_parameters[name],
+                    val,
                 )
 
             for child in node.children.values():

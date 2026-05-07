@@ -144,7 +144,9 @@ class MtreeSubtree(collections.abc.MutableMapping):
             ret += len(c)
         return ret
 
-    def _glob(self, patfrags: list[str], prefix: MtreePath, *, case_sensitive=False) -> Iterator[MtreePath]:
+    def _glob(
+        self, patfrags: list[str], prefix: MtreePath, *, case_sensitive=False
+    ) -> Iterator[MtreePath]:
         if len(patfrags) == 0:
             if self.entry is not None:
                 yield prefix
@@ -194,7 +196,9 @@ class MtreeSubtree(collections.abc.MutableMapping):
 
 
 class MtreeFile:
-    def __init__(self, file: Path | None = None, contents_root: Path | None = None) -> None:
+    def __init__(
+        self, file: Path | None = None, contents_root: Path | None = None
+    ) -> None:
         self._mtree = MtreeSubtree()
         if file:
             self.load(file, contents_root=contents_root, append=False)
@@ -239,7 +243,11 @@ class MtreeFile:
         # make sure that the .ssh config files are installed with the right permissions
         if path.name == ".ssh" and result != "0700":
             return "0700"
-        if path.parent.name == ".ssh" and not path.name.endswith(".pub") and result != "0600":
+        if (
+            path.parent.name == ".ssh"
+            and not path.name.endswith(".pub")
+            and result != "0600"
+        ):
             return "0600"
         return result
 
@@ -289,13 +297,15 @@ class MtreeFile:
             gname=gname,
             reference_dir=reference_dir,
         )
-        attribs = OrderedDict([
-            ("type", mtree_type),
-            ("uname", uname),
-            ("gname", gname),
-            ("mode", mode),
-            last_attrib,
-        ])
+        attribs = OrderedDict(
+            [
+                ("type", mtree_type),
+                ("uname", uname),
+                ("gname", gname),
+                ("mode", mode),
+                last_attrib,
+            ]
+        )
         entry = MtreeEntry(mtree_path, attribs)
         self._mtree[mtree_path] = entry
 
@@ -314,7 +324,9 @@ class MtreeFile:
             assert src_symlink is None
             self.add_file(None, path_in_image, symlink_dest=str(symlink_dest), **kwargs)
 
-    def add_dir(self, path, mode=None, uname="root", gname="wheel", reference_dir=None) -> None:
+    def add_dir(
+        self, path, mode=None, uname="root", gname="wheel", reference_dir=None
+    ) -> None:
         if isinstance(path, PurePath):
             path = str(path)
         assert not path.startswith("/")
@@ -329,17 +341,25 @@ class MtreeFile:
                 mode = self.infer_mode_string(reference_dir, True)
         mode = self._ensure_mtree_mode_fmt(mode)
         # Ensure that SSH will work even if the extra-file directory has wrong permissions
-        if (path == "root" or path == "root/.ssh") and mode != "0700" and mode != "0755":
+        if (
+            (path == "root" or path == "root/.ssh")
+            and mode != "0700"
+            and mode != "0755"
+        ):
             mode = "0755"
         # recursively add all parent dirs that don't exist yet
         parent = str(Path(path).parent)
         if parent != path:  # avoid recursion for path == "."
             if reference_dir is not None:
-                self.add_dir(parent, None, uname, gname, reference_dir=reference_dir.parent)
+                self.add_dir(
+                    parent, None, uname, gname, reference_dir=reference_dir.parent
+                )
             else:
                 self.add_dir(parent, mode, uname, gname, reference_dir=None)
         # now add the actual entry
-        attribs = OrderedDict([("type", "dir"), ("uname", uname), ("gname", gname), ("mode", mode)])
+        attribs = OrderedDict(
+            [("type", "dir"), ("uname", uname), ("gname", gname), ("mode", mode)]
+        )
         entry = MtreeEntry(mtree_path, attribs)
         self._mtree[mtree_path] = entry
 

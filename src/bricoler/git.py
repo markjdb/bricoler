@@ -49,10 +49,16 @@ class GitRepository:
         return run_cmd(["git", "-C", self.path] + cmd, *args, **kwargs)
 
     def checked_out_branch(self) -> str:
-        return self.git(["rev-parse", "--abbrev-ref", "HEAD"], capture_output=True).stdout.decode().strip()
+        return (
+            self.git(["rev-parse", "--abbrev-ref", "HEAD"], capture_output=True)
+            .stdout.decode()
+            .strip()
+        )
 
     def checked_out_revision(self) -> str:
-        return self.git(["rev-parse", "HEAD"], capture_output=True).stdout.decode().strip()
+        return (
+            self.git(["rev-parse", "HEAD"], capture_output=True).stdout.decode().strip()
+        )
 
     def isshallow(self) -> bool:
         output = self.git(["rev-parse", "--is-shallow-repository"], capture_output=True)
