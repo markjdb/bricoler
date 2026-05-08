@@ -258,6 +258,8 @@ class FreeBSDSrcBuildTask(Task):
                 f"TARGET={machine}",
                 f"TARGET_ARCH={machine_arch}",
                 f"KERNCONF={kernconf}",
+                "WITH_REPRODUCIBLE_BUILD=yes",
+                "WITH_CCACHE_BUILD=yes",
             ]
             if kernconfdir is not None:
                 args.append(f"KERNCONFDIR={kernconfdir}")
@@ -274,7 +276,6 @@ class FreeBSDSrcBuildTask(Task):
                 "MAKEOBJDIRPREFIX": objdir,
                 "SRCCONF": "/dev/null",
                 "__MAKE_CONF": "/dev/null",
-                "WITH_CCACHE_BUILD": "yes",
             }
 
             self.src.repo.make(args, env=env)
