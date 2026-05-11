@@ -107,7 +107,7 @@ class TaskMeta(ABCMeta):
         # Validate parameter types.
         for name, param in parameters.items():
             val = getattr(cls, name, None)
-            if val is not None and type(val) is not param.type:
+            if val is not None and type(val) is not param.type and not callable(val):
                 raise TypeError(
                     f"Parameter '{name}' in task '{cls.name}' has type "
                     f"{type(getattr(cls, name))}, expected {param.typename}"
@@ -173,13 +173,8 @@ class TaskParameter:
         self.choices = choices
         self.required = required
 
-        if self.default is not None:
-            if self.type is None:
-                self.type = builtins.type(self.default)
-            if not callable(self.default) and not isinstance(self.default, self.type):
-                raise TypeError(
-                    f"Default value {type(self.default)} does not match parameter type {self.type}"
-                )
+        if default is not None and self.type is None:
+            self.type = builtins.type(default)
         elif self.type is None:
             self.type = str
         self._initialized = True
@@ -392,7 +387,9 @@ class TaskSchedule:
             )
 
         # Set default parameters that haven't been overridden by config or the
-        # command-line.
+        # command-line.  This is done here to avoid resolving default values when
+        # we're not going to use them, and to make it easier to add support for
+        # parameterized defaults someday.
         for node in self.schedule:
             for name, param in node.task._chained_parameters.items():
                 if name in node.task.bindings:
