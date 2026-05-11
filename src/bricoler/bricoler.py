@@ -550,6 +550,11 @@ class FreeBSDVMImageTask(Task):
 
             add_config_file("etc/rc.local",
                             f"""
+                            bricoler_add_pkg()
+                            {{
+                                IGNORE_OSVERSION=yes pkg install -y -r local $1
+                            }}
+
                             bricoler_add_pkgs()
                             {{
                                 export PATH=${{PATH}}:/usr/local/sbin:/usr/local/bin
@@ -559,8 +564,14 @@ class FreeBSDVMImageTask(Task):
                                 cd /{pkg_reldir}/All
                                 # Install pkg(8).
                                 IGNORE_OSVERSION=yes pkg add -r local {pkg_pkg}
-                                # Install the requested packages.
-                                IGNORE_OSVERSION=yes pkg install -y -r local {self.packages}
+                                # Install the requested packages one at a time,
+                                # so that an installation failure (most likely
+                                # due to some package not being available) doesn't
+                                # prevent the rest of the packages from being
+                                # installed.
+                                for pkg in {self.packages}; do
+                                    bricoler_add_pkg $pkg
+                                done
                             }}
 
                             if [ -f /firstboot ]; then
