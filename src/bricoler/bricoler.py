@@ -988,7 +988,7 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
     - Raise warnings about unexpected skipped tests. XXX-MJ
     - Detect flakiness in tests and report it.
     - Look for witness warnings after test runs and report them. XXX-MJ
-    - Don't run gdb upon a kernel panic, collect a kernel dump instead. XXX-MJ
+    - Don't run gdb upon a kernel panic; include the panic info in the report.
     - Keep track of results over time and report regressions. XXX-MJ
     - Generate email reports.
     """
@@ -1005,7 +1005,24 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
     }
 
     def run(self, ctx):
-        outputs = super().run(ctx)
+        report = f"Branch: {self.src.repo.checked_out_branch()}\n"
+        report += f"Commit: {self.src.repo.checked_out_revision()}\n\n"
+
+        try:
+            outputs = super().run(ctx)
+        except FreeBSDVM.PanicException as e:
+            subject = (
+                f"FreeBSD regression test suite: kernel panic "
+                f"({self.src.repo.checked_out_branch()})"
+            )
+            report += f"The VM panicked during the test run: {e.panicstr}\n"
+            report += f"Backtrace:\n{e.backtrace}\n"
+            return {
+                'email': EmailReport(
+                    subject=subject,
+                    body=report,
+                ),
+            }
 
         db = KyuaDB(outputs['report_db_path'])
         failing_tests = db.failed() + db.broken()
@@ -1033,9 +1050,6 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
                     info(f"  {test_id}")
 
         subject = f"FreeBSD regression test suite results ({self.src.repo.checked_out_branch()})"
-
-        report  = f"Branch: {self.src.repo.checked_out_branch()}\n"
-        report += f"Commit: {self.src.repo.checked_out_revision()}\n"
         report += "The test run completed successfully, with "
         report += f"{len(db.passed())} passed, "
         report += f"{len(db.failed())} failed, "
