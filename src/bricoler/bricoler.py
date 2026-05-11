@@ -922,6 +922,11 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
                         "or the empty string to run all tests",
             default="",
         ),
+        'gdb_on_panic': TaskParameter(
+            description="Attach gdb when the VM panics",
+            type=bool,
+            default=lambda: sys.stdin.isatty(),
+        ),
     }
 
     outputs = {
@@ -961,7 +966,7 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
             # - we might want to reuse the VM image, so should leave the fs clean.
             vm.poweroff()
         except FreeBSDVM.PanicException as e:
-            if sys.stdin.isatty():
+            if self.gdb_on_panic:
                 self._gdb("-ex", f"thread {e.cpuid + 1}")
             raise e
         return {
@@ -988,6 +993,8 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
     - Generate email reports.
     """
     name = "freebsd-regression-test-suite-ci"
+
+    gdb_on_panic = False
 
     inputs = {
         'src': FreeBSDSrcGitCheckoutTask,
