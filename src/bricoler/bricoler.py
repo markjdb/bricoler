@@ -1017,15 +1017,23 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
 
     def run(self, ctx):
         report = f"Branch: {self.src.repo.checked_out_branch()}\n"
-        report += f"Commit: {self.src.repo.checked_out_revision()}\n\n"
+        report += f"Commit: {self.src.repo.checked_out_revision()}\n"
+
+        def duration_line():
+            h, rem = divmod(int(time.time() - start), 3600)
+            m, s = divmod(rem, 60)
+            elapsed = f"{h}h {m}m {s}s" if h else f"{m}m {s}s"
+            return f"Duration: {elapsed}\n"
 
         try:
+            start = time.time()
             outputs = super().run(ctx)
         except FreeBSDVM.PanicException as e:
             subject = (
                 f"FreeBSD regression test suite: kernel panic "
                 f"({self.src.repo.checked_out_branch()})"
             )
+            report += duration_line() + "\n"
             report += f"The VM panicked during the test run: {e.panicstr}\n"
             report += f"Backtrace:\n{e.backtrace}\n"
             return {
@@ -1034,6 +1042,8 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
                     body=report,
                 ),
             }
+
+        report += duration_line() + "\n"
 
         db = KyuaDB(outputs['report_db_path'])
         failing_tests = db.failed() + db.broken()
