@@ -1034,8 +1034,8 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
                 f"({self.src.repo.checked_out_branch()})"
             )
             report += duration_line() + "\n"
-            report += f"The VM panicked during the test run: {e.panicstr}\n"
-            report += f"Backtrace:\n{e.backtrace}\n"
+            report += f"The VM panicked during the test run: {e.panicstr}\n\n"
+            report += f"Stack trace:\n{e.backtrace}\n"
             return {
                 'email': EmailReport(
                     subject=subject,
