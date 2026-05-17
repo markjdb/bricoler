@@ -819,6 +819,8 @@ class FreeBSDRegressionTestSuiteBuildTask(FreeBSDSrcBuildAndInstallTask):
 
 
 class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
+    image_size = 30
+
     loader_tunables = " ".join([
         "net.inet.ip.fw.default_to_accept=1",
         "net.inet.ipf.jail_allowed=1",
