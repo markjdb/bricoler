@@ -50,9 +50,10 @@ class SSHCommandRunner:
 
 
 class VMImage:
-    def __init__(self, path: Path, machine: str):
+    def __init__(self, path: Path, machine: str, filesystem: Optional[str] = None):
         self.path = path
         self.machine = machine
+        self.filesystem = filesystem
 
     def select(self, d: Dict[str, str], default=None) -> str:
         val = d.get(self.machine)

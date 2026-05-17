@@ -669,7 +669,7 @@ class FreeBSDVMImageTask(Task):
 
         self.run_cmd(mkimg_cmd)
 
-        outputs['image'] = VMImage(vm_image_path, machine)
+        outputs['image'] = VMImage(vm_image_path, machine, self.filesystem.value)
         outputs['sysroot'] = stagedir
 
         return outputs
@@ -1020,6 +1020,7 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
     def run(self, ctx):
         report = f"Branch: {self.src.repo.checked_out_branch()}\n"
         report += f"Commit: {self.src.repo.checked_out_revision()}\n"
+        report += f"Root filesystem: {self.vm_image.image.filesystem}\n"
 
         def duration_line():
             h, rem = divmod(int(time.time() - start), 3600)
