@@ -1003,6 +1003,10 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
     - Look for witness warnings after test runs and report them. XXX-MJ
     - Don't run gdb upon a kernel panic; include the panic info in the report.
     - Keep track of results over time and report regressions. XXX-MJ
+      - Also list tests added since the last run XXX-MJ
+    - Detect kernel backwards compat breakage: XXX-MJ
+      - Run the test suite with new kernel and old world.
+      - Check for changes in the layout of important kernel structures, ioctl definitions, ...
     - Generate email reports.
     """
     name = "freebsd-regression-test-suite-ci"
