@@ -945,6 +945,7 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
     outputs = {
         'report_db_path': Path,
         'report_txt_path': Path,
+        'uname_a': str,
     }
 
     def run(self, ctx):
@@ -973,6 +974,7 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
             ssh = SSHCommandRunner(vm.vmrun.ssh_addr, vm.vmrun.ssh_key)
             ssh.scp_from("/root/kyua.db", report_db_path)
             ssh.scp_from("/root/kyua-report.txt", report_txt_path)
+            uname_a = ssh.run_cmd(["uname", "-a"], capture_output=True).stdout.decode().strip()
 
             # We don't really need to power off the VM, but:
             # - doing so might reveal a bug,
@@ -985,6 +987,7 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
         return {
             'report_db_path': report_db_path,
             'report_txt_path': report_txt_path,
+            'uname_a': uname_a,
         }
 
     def _report(self, *args):
