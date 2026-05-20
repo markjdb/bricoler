@@ -873,6 +873,7 @@ class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
         "cfiscsi",
         "cryptodev",
         "ctl",
+        "dtraceall",
         "dummymbuf",
         "dummynet",
         "fusefs",
