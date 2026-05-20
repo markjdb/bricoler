@@ -1047,7 +1047,6 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
 
         report = f"Branch: {branch}\n"
         report += f"Root filesystem: {self.vm_image.image.filesystem}\n"
-        report += f"Run: #{curr_run}\n"
 
         def duration_line():
             h, rem = divmod(int(time.time() - start), 3600)
