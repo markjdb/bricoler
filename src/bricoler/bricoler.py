@@ -71,6 +71,16 @@ class KyuaDB:
     def broken(self) -> List[str]:
         return self._results(self.Result.BROKEN)
 
+    @functools.cache
+    def all_tests(self) -> List[str]:
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT tp.relative_path, tc.name
+            FROM test_cases tc
+            JOIN test_programs tp ON tc.test_program_id = tp.test_program_id
+        """)
+        return [f"{row[0]}:{row[1]}" for row in cursor.fetchall()]
+
 
 class FreeBSDSrcRepository(GitRepository):
     @functools.cache
@@ -1005,8 +1015,7 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
     - Detect flakiness in tests and report it.
     - Look for witness warnings after test runs and report them. XXX-MJ
     - Don't run gdb upon a kernel panic; include the panic info in the report.
-    - Keep track of results over time and report regressions. XXX-MJ
-      - Also list tests added since the last run XXX-MJ
+    - Keep track of results over time; report newly skipped and added tests.
     - Detect kernel backwards compat breakage: XXX-MJ
       - Run the test suite with new kernel and old world.
       - Check for changes in the layout of important kernel structures, ioctl definitions, ...
@@ -1025,9 +1034,19 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
     }
 
     def run(self, ctx):
-        report = f"Branch: {self.src.repo.checked_out_branch()}\n"
-        report += f"Commit: {self.src.repo.checked_out_revision()}\n"
+        branch = self.src.repo.checked_out_branch()
+        runs_dir = Path.cwd() / "runs" / branch.replace('/', '-')
+        with chdir(runs_dir):
+            existing_runs = sorted(
+                int(d.name) for d in Path.cwd().iterdir()
+                if d.is_dir() and d.name.isdigit()
+            )
+        prev_run = existing_runs[-1] if existing_runs else None
+        curr_run = (prev_run + 1) if prev_run is not None else 1
+
+        report = f"Branch: {branch}\n"
         report += f"Root filesystem: {self.vm_image.image.filesystem}\n"
+        report += f"Run: #{curr_run}\n"
 
         def duration_line():
             h, rem = divmod(int(time.time() - start), 3600)
@@ -1035,13 +1054,14 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
             elapsed = f"{h}h {m}m {s}s" if h else f"{m}m {s}s"
             return f"Duration: {elapsed}\n"
 
+        # Actually run the test suite.
         try:
             start = time.time()
             outputs = super().run(ctx)
         except FreeBSDVM.PanicException as e:
             subject = (
                 f"FreeBSD regression test suite: kernel panic "
-                f"({self.src.repo.checked_out_branch()})"
+                f"({branch})"
             )
             report += duration_line() + "\n"
             report += f"The VM panicked during the test run: {e.panicstr}\n\n"
@@ -1053,7 +1073,12 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
                 ),
             }
 
-        report += duration_line() + "\n"
+        # Save this run's kyua.db for future comparisons.
+        with chdir(runs_dir / str(curr_run)):
+             shutil.copy2(outputs['report_db_path'], "kyua.db")
+
+        report += duration_line()
+        report += f"System: {outputs['uname_a']}\n\n"
 
         db = KyuaDB(outputs['report_db_path'])
         failing_tests = db.failed() + db.broken()
@@ -1080,12 +1105,43 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
                 for test_id in confirmed_failures:
                     info(f"  {test_id}")
 
-        subject = f"FreeBSD regression test suite results ({self.src.repo.checked_out_branch()})"
+        subject = f"FreeBSD regression test suite results #{curr_run} ({branch})"
         report += "The test run completed successfully, with "
         report += f"{len(db.passed())} passed, "
         report += f"{len(db.failed())} failed, "
         report += f"{len(db.broken())} broken, and "
         report += f"{len(db.skipped())} skipped test cases.\n"
+
+        # Compare with the previous run.
+        if prev_run is not None:
+            prev_db = None
+            prev_db_path = runs_dir / str(prev_run) / "kyua.db"
+            if prev_db_path.exists():
+                try:
+                    prev_db = KyuaDB(prev_db_path)
+                except ValueError:
+                    pass  # Ignore DB with incompatible schema.
+
+            if prev_db is not None:
+                prev_all = set(prev_db.all_tests())
+                prev_skipped = set(prev_db.skipped())
+                curr_all = set(db.all_tests())
+                curr_skipped = set(db.skipped())
+
+                newly_skipped = sorted(
+                    t for t in curr_skipped if t in prev_all and t not in prev_skipped
+                )
+                added_tests = sorted(t for t in curr_all if t not in prev_all)
+
+                if newly_skipped:
+                    report += f"\nTests newly skipped (vs run #{prev_run}):\n"
+                    for t in newly_skipped:
+                        report += f"  {t}\n"
+
+                if added_tests:
+                    report += f"\nTests added since run #{prev_run}:\n"
+                    for t in added_tests:
+                        report += f"  {t}\n"
 
         for result, tests in [("Failed", db.failed()), ("Broken", db.broken())]:
             if len(tests) > 0:

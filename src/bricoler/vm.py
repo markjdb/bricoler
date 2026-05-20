@@ -24,7 +24,7 @@ class SSHCommandRunner:
         self.port = addr[1]
         self.key = key
 
-    def run_cmd(self, cmd: List[str] = []):
+    def run_cmd(self, cmd: List[str] = [], **kwargs):
         ssh_cmd = [
             "ssh",
             "-o", "UserKnownHostsFile=/dev/null",
@@ -33,7 +33,7 @@ class SSHCommandRunner:
             "-i", str(self.key),
             f"root@{self.addr}",
         ] + cmd
-        run_cmd(ssh_cmd, check_result=True)
+        return run_cmd(ssh_cmd, check_result=True, **kwargs)
 
     def scp_from(self, src: Path, dst: Path):
         scp_cmd = [
