@@ -49,13 +49,14 @@ class KyuaDB:
     @functools.cache
     def _results(self, restype: Result) -> List[str]:
         cursor = self.conn.cursor()
-        cursor.execute(f"""
+        args = (restype.value, )
+        cursor.execute("""
             SELECT tp.relative_path, tc.name
             FROM test_results tr
             JOIN test_cases tc ON tr.test_case_id = tc.test_case_id
             JOIN test_programs tp ON tc.test_program_id = tp.test_program_id
-            WHERE tr.result_type = '{restype.value}'
-        """)
+            WHERE tr.result_type = ?
+        """, args)
         results = cursor.fetchall()
         return [f"{row[0]}:{row[1]}" for row in results]
 
