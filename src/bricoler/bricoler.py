@@ -604,7 +604,7 @@ class FreeBSDVMImageTask(Task):
                 "-t", "ffs",
                 "-Z",
                 "-o", "softupdates=1",
-                "-o" "version=2"
+                "-o", "version=2"
             ]
         else:
             makefs_cmd += [
