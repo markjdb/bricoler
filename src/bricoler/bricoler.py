@@ -97,7 +97,7 @@ class FreeBSDSrcRepository(GitRepository):
             )
 
     def make(self, args: List[str], **kwargs):
-        cmd = ['make', '-C', self.path.resolve()] + args
+        cmd = ['make', '-C', self.path.resolve(), *args]
         # Don't skip the command if we need to capture output.
         skip = self._no_cmds and not kwargs.get('capture_output', False)
         return run_cmd(cmd, skip=skip, **kwargs)
@@ -975,7 +975,8 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
                 "-j", str(self.parallelism),
                 "-r", "/root/kyua.db",
                 "-o", "/root/kyua-report.txt",
-            ] + self.tests.split()
+                *self.tests.split(),
+            ]
             vm.sendcmd(cmd)
             vm.wait_for_prompt(timeout=10*3600)
 

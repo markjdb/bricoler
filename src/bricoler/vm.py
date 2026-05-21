@@ -32,7 +32,8 @@ class SSHCommandRunner:
             "-p", str(self.port),
             "-i", str(self.key),
             f"root@{self.addr}",
-        ] + cmd
+            *cmd,
+        ]
         return run_cmd(ssh_cmd, check_result=True, **kwargs)
 
     def scp_from(self, src: Path, dst: Path):
