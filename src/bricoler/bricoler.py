@@ -1128,10 +1128,8 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
                 curr_all = set(db.all_tests())
                 curr_skipped = set(db.skipped())
 
-                newly_skipped = sorted(
-                    t for t in curr_skipped if t in prev_all and t not in prev_skipped
-                )
-                added_tests = sorted(t for t in curr_all if t not in prev_all)
+                newly_skipped = sorted(curr_skipped - prev_skipped)
+                added_tests = sorted(curr_all - prev_all)
 
                 if newly_skipped:
                     report += f"\nTests newly skipped (vs run #{prev_run}):\n"
