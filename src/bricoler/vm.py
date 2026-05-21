@@ -9,7 +9,7 @@ import os
 import sys
 import uuid
 from abc import abstractmethod
-from enum import Enum
+from enum import IntEnum, StrEnum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -65,22 +65,22 @@ class VMImage:
         return val
 
 
-class VMHypervisor(Enum):
-    BHYVE = 'bhyve'
-    QEMU = 'qemu'
-    RVVM = 'rvvm'
+class VMHypervisor(StrEnum):
+    BHYVE = "bhyve"
+    QEMU = "qemu"
+    RVVM = "rvvm"
 
 
 class VMRun:
-    class BlockDriver(Enum):
-        VIRTIO = 1,
-        AHCI = 2,
-        NVME = 3,
+    class BlockDriver(IntEnum):
+        VIRTIO = 1
+        AHCI = 2
+        NVME = 3
 
-    class NetworkDriver(Enum):
-        VIRTIO = 1,
-        E1000 = 2,
-        NONE = 3,
+    class NetworkDriver(IntEnum):
+        VIRTIO = 1
+        E1000 = 2
+        NONE = 3
 
     def __init__(
         self,
@@ -115,11 +115,11 @@ class VMRun:
 
 
 class BhyveRun(VMRun):
-    class PrivModel(Enum):
-        INVALID = 1,  # Cannot run bhyve.
-        UNPRIV = 2,   # Can run bhyve with current privileges.
-        MDO = 3,      # Can run bhyve with mdo(1).
-        SUDO = 4,     # Can run bhyve with sudo.
+    class PrivModel(IntEnum):
+        INVALID = 1  # Cannot run bhyve.
+        UNPRIV = 2   # Can run bhyve with current privileges.
+        MDO = 3      # Can run bhyve with mdo(1).
+        SUDO = 4     # Can run bhyve with sudo.
 
     @functools.cache
     @staticmethod

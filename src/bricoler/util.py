@@ -11,7 +11,7 @@ import socket
 import subprocess
 import sys
 from contextlib import contextmanager
-from enum import Enum
+from enum import auto, IntEnum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -43,19 +43,19 @@ class EmailReport:
         )
 
 
-class ANSIColour(Enum):
-    BLACK = 30,
-    RED = 31,
-    GREEN = 32,
-    YELLOW = 33,
-    BLUE = 34,
-    MAGENTA = 35,
-    CYAN = 36,
-    WHITE = 37,
+class ANSIColour(IntEnum):
+    BLACK = 30
+    RED = auto()
+    GREEN = auto()
+    YELLOW = auto()
+    BLUE = auto()
+    MAGENTA = auto()
+    CYAN = auto()
+    WHITE = auto()
 
 
 def colour(text: str, colour: ANSIColour) -> str:
-    return f"\033[{colour.value[0]}m{text}\033[0m"
+    return f"\033[{colour.value}m{text}\033[0m"
 
 
 @contextmanager

@@ -14,7 +14,7 @@ import sqlite3
 import sys
 import textwrap
 import time
-from enum import Enum
+from enum import StrEnum
 from importlib import resources
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Type, Union
@@ -30,11 +30,11 @@ from .vm import FreeBSDVM, VMImage, VMHypervisor, BhyveRun, QEMURun, RVVMRun, SS
 class KyuaDB:
     SCHEMA_VERSION = 3
 
-    class Result(Enum):
-        PASSED = 'passed'
-        FAILED = 'failed'
-        SKIPPED = 'skipped'
-        BROKEN = 'broken'
+    class Result(StrEnum):
+        PASSED = "passed"
+        FAILED = "failed"
+        SKIPPED = "skipped"
+        BROKEN = "broken"
 
     def __init__(self, path: Path):
         self.path = path
@@ -309,9 +309,9 @@ class FreeBSDPkgBaseBuildTask(FreeBSDSrcBuildTask):
     make_targets = "buildworld buildkernel packages"
 
 
-class FreeBSDVMImageFilesystem(Enum):
-    UFS = 'ufs'
-    ZFS = 'zfs'
+class FreeBSDVMImageFilesystem(StrEnum):
+    UFS = "ufs"
+    ZFS = "zfs"
 
 
 class FreeBSDVMImageTask(Task):
