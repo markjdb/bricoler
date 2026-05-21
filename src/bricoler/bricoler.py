@@ -995,7 +995,7 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
         except FreeBSDVM.PanicException as e:
             if self.gdb_on_panic:
                 self._gdb("-ex", f"thread {e.cpuid + 1}")
-            raise e
+            raise
         return {
             'report_db_path': report_db_path,
             'report_txt_path': report_txt_path,
@@ -1702,7 +1702,7 @@ class OpenZFSTestSuiteTask(FreeBSDVMBootTask):
         except FreeBSDVM.PanicException as e:
             if sys.stdin.isatty():
                 self._gdb("-ex", f"thread {e.cpuid + 1}")
-            raise e
+            raise
         return outputs
 
 

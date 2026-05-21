@@ -428,9 +428,9 @@ class FreeBSDVM:
             self.expect("login:", timeout=600)
             self.sendline("root")
             self.wait_for_prompt()
-        except self.PanicException as e:
-            e.args = (f"VM panicked during boot: {e.panicstr}",)
-            raise e
+        except self.PanicException as err:
+            err_msg = f"VM panicked during boot: {err.panicstr}"
+            raise self.PanicException(err_msg) from err
 
     def wait_for_prompt(self, **kwargs):
         self.expect("root@.*#", **kwargs)
