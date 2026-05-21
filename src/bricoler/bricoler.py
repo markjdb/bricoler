@@ -883,7 +883,7 @@ class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
         "ip_mroute", "ip6_mroute",
         "ipl",
         "ipsec",
-        "mac_bsdextended", "mac_ipacl", "mac_portacl", "mqueuefs",
+        "mac_bsdextended", "mac_do", "mac_ipacl", "mac_portacl", "mqueuefs",
         "pf", "pflog", "pflow", "pfsync",
         "sctp",
         "snd_dummy",
