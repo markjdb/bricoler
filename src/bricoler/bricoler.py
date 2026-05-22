@@ -1790,6 +1790,10 @@ class SyzkallerFuzzFreeBSDTask(Task):
             type=VMHypervisor,
             default=VMHypervisor.BHYVE if BhyveRun.canrun() else VMHypervisor.QEMU,
         ),
+        'verbosity': TaskParameter(
+            description="Verbosity level for syzkaller logs",
+            default=0,
+        ),
         'vm_count': TaskParameter(
             description="Number of VMs to run in parallel (ignored in debug mode)",
             default=os.cpu_count() // 2,
@@ -1865,7 +1869,11 @@ class SyzkallerFuzzFreeBSDTask(Task):
         with open("syz-manager.cfg", "w") as f:
             json.dump(params, f, indent=2)
 
-        cmd = [self.syzkaller.bindir / "syz-manager", "-config", "syz-manager.cfg"]
+        cmd = [
+            self.syzkaller.bindir / "syz-manager",
+            "-config", "syz-manager.cfg",
+            "-vv", str(self.verbosity)
+        ]
         if self.debug:
             cmd.append("-debug")
         self.run_cmd(cmd)
