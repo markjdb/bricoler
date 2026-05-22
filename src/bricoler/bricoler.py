@@ -984,9 +984,10 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
             report_txt_path = Path.cwd() / "kyua-report.txt"
 
             ssh = SSHCommandRunner(vm.vmrun.ssh_addr, vm.vmrun.ssh_key)
-            lingering_jails = ssh.get_output(["jls", "-v", "-d", "-n", "name"])
             ssh.scp_from("/root/kyua.db", report_db_path)
             ssh.scp_from("/root/kyua-report.txt", report_txt_path)
+
+            lingering_jails = ssh.get_output(["jls", "-v", "-d", "name"])
             uname_a = ssh.get_output(["uname", "-a"])
 
             # We don't really need to power off the VM, but:
