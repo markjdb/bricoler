@@ -1045,6 +1045,8 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
         prev_run = existing_runs[-1] if existing_runs else None
         curr_run = (prev_run + 1) if prev_run is not None else 1
 
+        hostname = os.uname().nodename
+
         report = f"Branch: {branch}\n"
         report += f"Root filesystem: {self.vm_image.image.filesystem}\n"
 
@@ -1060,7 +1062,7 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
             outputs = super().run(ctx)
         except FreeBSDVM.PanicException as e:
             subject = (
-                f"FreeBSD regression test suite: kernel panic "
+                f"{hostname}: FreeBSD regression test suite: kernel panic "
                 f"({branch})"
             )
             report += duration_line() + "\n"
@@ -1105,7 +1107,7 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
                 for test_id in confirmed_failures:
                     info(f"  {test_id}")
 
-        subject = f"FreeBSD regression test suite results #{curr_run} ({branch})"
+        subject = f"{hostname}: FreeBSD regression test suite results #{curr_run} ({branch})"
         report += "The test run completed successfully, with "
         report += f"{len(db.passed())} passed, "
         report += f"{len(db.failed())} failed, "
