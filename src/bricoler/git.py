@@ -47,15 +47,18 @@ class GitRepository:
             raise ValueError("Repository has not been cloned yet")
         return run_cmd(['git', '-C', self.path] + cmd, *args, **kwargs)
 
+    def git_output(self, cmd: List[str]) -> str:
+        output = self.git(cmd, capture_output=True)
+        return output.stdout.decode().strip()
+
     def checked_out_branch(self) -> str:
-        return self.git(["rev-parse", "--abbrev-ref", "HEAD"], capture_output=True).stdout.decode().strip()
+        return self.git_output(["rev-parse", "--abbrev-ref", "HEAD"])
 
     def checked_out_revision(self) -> str:
-        return self.git(["rev-parse", "HEAD"], capture_output=True).stdout.decode().strip()
+        return self.git_output(["rev-parse", "HEAD"])
 
     def isshallow(self) -> bool:
-        output = self.git(["rev-parse", "--is-shallow-repository"], capture_output=True)
-        return output.stdout.decode().strip() == "true"
+        return self.git_output(["rev-parse", "--is-shallow-repository"]) == "true"
 
     def clone(self, shallow=True):
         if not (self.path / ".git").exists():
@@ -97,8 +100,8 @@ class GitRepository:
     @property
     def remotes(self) -> Dict[str, str]:
         result = {}
-        output = self.git(["remote", "-v"], capture_output=True)
-        for line in output.stdout.decode().splitlines():
+        output = self.git_output(["remote", "-v"])
+        for line in output.splitlines():
             parts = line.split()
             if len(parts) < 2:
                 continue
