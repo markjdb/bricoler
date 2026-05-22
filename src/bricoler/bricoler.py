@@ -1702,6 +1702,43 @@ class OpenZFSTestSuiteTask(FreeBSDVMBootTask):
         return outputs
 
 
+class FlatBuffersGitCheckoutTask(GitCheckoutTask):
+    """
+    Clone the FlatBuffers repository, or update an existing clone.
+    """
+    name = "flatbuffers-git-checkout"
+
+    url = "https://github.com/google/flatbuffers"
+
+
+class FlatBuffersBuildTask(Task):
+    name = "flatbuffers-build"
+
+    inputs = {
+        'src': FlatBuffersGitCheckoutTask,
+    }
+
+    outputs = {
+        'repo': GitRepository,
+    }
+
+    def run(self, ctx):
+        with chdir(self.src.repo.path):
+            self.run_cmd(["cmake", "-G", "Unix Makefiles"])
+            self.run_cmd(["gmake", "-j", str(ctx.max_jobs)])
+        return {'repo': self.src.repo}
+
+
+class SyzkallerFlatBuffersGitCheckoutTask(FlatBuffersGitCheckoutTask):
+    branch = "v23.5.26"
+
+
+class SyzkallerFlatBuffersBuildTask(FlatBuffersBuildTask):
+    inputs = {
+        'src': SyzkallerFlatBuffersGitCheckoutTask,
+    }
+
+
 class SyzkallerGitCheckoutTask(GitCheckoutTask):
     """
     Clone the syzkaller repository, or update an existing clone.
@@ -1712,10 +1749,6 @@ class SyzkallerGitCheckoutTask(GitCheckoutTask):
     branch = "master"
     shallow = False  # Some syzkaller tests require a full clone.
 
-    outputs = {
-        'repo': GitRepository,
-    }
-
 
 class SyzkallerBuildTask(Task):
     """
@@ -1724,6 +1757,10 @@ class SyzkallerBuildTask(Task):
     name = "syzkaller-build"
 
     parameters = {
+        'srcdir': TaskParameter(
+            description="Path to kernel sources",
+            type=Path,
+        ),
         'test': TaskParameter(
             description="Run tests after building",
             default=True
@@ -1731,6 +1768,7 @@ class SyzkallerBuildTask(Task):
     }
 
     inputs = {
+        'flatc': SyzkallerFlatBuffersBuildTask,
         'src': SyzkallerGitCheckoutTask,
     }
 
@@ -1741,6 +1779,10 @@ class SyzkallerBuildTask(Task):
 
     def run(self, ctx):
         with chdir(self.src.repo.path):
+            if self.srcdir is not None:
+                self.run_cmd(["gmake", "extract", f"SOURCEDIR={self.srcdir}"])
+                self.run_cmd(["gmake", "generate"],
+                             env={"PATH": str(self.flatc.repo.path) + ":" + os.environ.get("PATH")})
             env = {'GOMAXPROCS': str(ctx.max_jobs)}
             self.run_cmd(["gmake"], env=env)
             if self.test:
@@ -1821,22 +1863,23 @@ class SyzkallerFuzzFreeBSDTask(Task):
         hypervisor_args = {}
         image_path = None
         if self.hypervisor == VMHypervisor.BHYVE:
-            if self.zfs_dataset is None:
-                raise ValueError("zfs_dataset parameter is required when using bhyve")
-            def zfs_get(dataset, prop):
-                cmd = ["zfs", "get", "-H", "-o", "value", prop, dataset]
-                return self.run_cmd(cmd, capture_output=True).stdout.decode().strip()
-            mountpoint = zfs_get(self.zfs_dataset, "mountpoint")
-            if mountpoint == "none":
-                raise ValueError(f"ZFS dataset {self.zfs_dataset} is not mounted")
-
-            # bhyve doesn't support transient disk snapshots, so we have to provide
-            # a ZFS dataset to syz-manager that it can clone.
-            hypervisor_args['dataset'] = self.zfs_dataset
             hypervisor_args['bootrom'] = "/usr/local/share/uefi-firmware/BHYVE_UEFI.fd"
 
-            image_path = str(Path(mountpoint) / "syzkaller.img")
-            shutil.copyfile(self.vm_image.image.path, image_path)
+            if self.zfs_dataset is not None:
+                def zfs_get(dataset, prop):
+                    cmd = ["zfs", "get", "-H", "-o", "value", prop, dataset]
+                    return self.run_cmd(cmd, capture_output=True).stdout.decode().strip()
+                mountpoint = zfs_get(self.zfs_dataset, "mountpoint")
+                if mountpoint == "none":
+                    raise ValueError(f"ZFS dataset {self.zfs_dataset} is not mounted")
+                # bhyve doesn't support transient disk snapshots, so we have to provide
+                # a ZFS dataset to syz-manager that it can clone.
+                hypervisor_args['dataset'] = self.zfs_dataset
+
+                image_path = str(Path(mountpoint) / "syzkaller.img")
+                shutil.copyfile(self.vm_image.image.path, image_path)
+            else:
+                image_path = self.vm_image.image.path
         else:
             # --enable-kvm is hard-coded in the QEMU parameters for FreeBSD
             # targets, so we have to do this fragile thing to remove it.
