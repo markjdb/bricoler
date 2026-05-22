@@ -95,7 +95,9 @@ class GitRepository:
         else:
             self.git(["fetch", "--unshallow", remote])
         self.git(["checkout", f"{self.branch}"])
-        self.git(["merge", "--ff-only", f"{remote}/{self.branch}"])
+        rev = self.git_output(["rev-parse", "--symbolic-full-name", f"{self.branch}"])
+        if not rev.startswith("refs/tags/"):
+            self.git(["merge", "--ff-only", f"{remote}/{self.branch}"])
 
     @property
     def remotes(self) -> Dict[str, str]:
