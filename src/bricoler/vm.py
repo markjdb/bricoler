@@ -35,6 +35,10 @@ class SSHCommandRunner:
         ] + cmd
         return run_cmd(ssh_cmd, check_result=True, **kwargs)
 
+    def get_output(self, cmd: List[str] = []) -> str:
+        result = self.run_cmd(cmd, capture_output=True, text=True)
+        return result.stdout.strip()
+
     def scp_from(self, src: Path, dst: Path):
         scp_cmd = [
             "scp",

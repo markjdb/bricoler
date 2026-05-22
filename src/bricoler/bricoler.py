@@ -954,6 +954,7 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
     }
 
     outputs = {
+        'lingering_jails': str,
         'report_db_path': Path,
         'report_txt_path': Path,
         'uname_a': str,
@@ -983,9 +984,10 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
             report_txt_path = Path.cwd() / "kyua-report.txt"
 
             ssh = SSHCommandRunner(vm.vmrun.ssh_addr, vm.vmrun.ssh_key)
+            lingering_jails = ssh.get_output(["jls", "-v", "-d", "-n", "name"])
             ssh.scp_from("/root/kyua.db", report_db_path)
             ssh.scp_from("/root/kyua-report.txt", report_txt_path)
-            uname_a = ssh.run_cmd(["uname", "-a"], capture_output=True).stdout.decode().strip()
+            uname_a = ssh.get_output(["uname", "-a"])
 
             # We don't really need to power off the VM, but:
             # - doing so might reveal a bug,
@@ -996,6 +998,7 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
                 self._gdb("-ex", f"thread {e.cpuid + 1}")
             raise e
         return {
+            'lingering_jails': lingering_jails,
             'report_db_path': report_db_path,
             'report_txt_path': report_txt_path,
             'uname_a': uname_a,
@@ -1015,6 +1018,7 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
     - Raise warnings about unexpected skipped tests. XXX-MJ
     - Detect flakiness in tests and report it.
     - Look for witness warnings after test runs and report them. XXX-MJ
+    - Look for resource leaks (e.g., dying jails).
     - Don't run gdb upon a kernel panic; include the panic info in the report.
     - Keep track of results over time; report newly skipped and added tests.
     - Detect kernel backwards compat breakage: XXX-MJ
@@ -1151,6 +1155,12 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
                     if test_id in flaky:
                         report += "    (flaky, passed after retry)"
                     report += "\n"
+
+        # Describe resource leaks.
+        if len(outputs['lingering_jails']) > 0:
+            report += "\nLingering jails after test run (potential resource leak):\n"
+            for line in outputs['lingering_jails'].splitlines():
+                report += f"  {line}\n"
 
         return {
             'email': EmailReport(
