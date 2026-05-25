@@ -174,7 +174,7 @@ class BhyveRun(VMRun):
         match self.nic_driver:
             case VMRun.NetworkDriver.VIRTIO: return "virtio-net"
             case VMRun.NetworkDriver.E1000: return "e1000"
-        raise ValueError(f"Unsupported network driver {driver} is not supported by bhyve")
+        raise ValueError(f"Unsupported network driver {self.nic_driver} is not supported by bhyve")
 
     def setup(self) -> List[Any]:
         if BhyveRun.has_monitor_mode():
