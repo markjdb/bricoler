@@ -777,7 +777,7 @@ class FreeBSDVMBootTask(Task):
 
         return {'vm': vm}
 
-    def _gdb(self, *args):
+    def _gdb(self, *args, search_path=None, **kwargs):
         if shutil.which("gdb") is None:
             raise ValueError("gdb is not available")
         sysroot = Path(os.readlink(Path.cwd() / "sysroot"))
@@ -788,12 +788,12 @@ class FreeBSDVMBootTask(Task):
         gdb_cmd = [
             "gdb",
             "-ex", f"set sysroot {Path.cwd() / sysroot}",
+            *["-ex", f"set solib-search-path {search_path}" if search_path is not None else []],
             "-ex", f"file {sysroot / 'boot/kernel/kernel'}",
             "-ex", f"source {sysroot / 'usr/lib/debug/boot/kernel/kernel-gdb.py'}",
             "-ex", f"target remote {host}:{port}",
         ]
-        gdb_cmd += args
-        self.run_cmd(gdb_cmd, process_group=0)
+        self.run_cmd(gdb_cmd + list(args), process_group=0)
 
     def _ssh(self, *args):
         with open(Path.cwd() / "ssh-addr", "r") as f:
@@ -1716,6 +1716,7 @@ class OpenZFSTestSuiteTask(FreeBSDVMBootTask):
     memory = 1024 * (os.cpu_count() // 2)
 
     inputs = {
+        'build': OpenZFSTestSuiteBuildTask,
         'vm_image': OpenZFSTestSuiteVMImageTask,
     }
 
@@ -1726,6 +1727,11 @@ class OpenZFSTestSuiteTask(FreeBSDVMBootTask):
                 f.truncate(50 * 1024 * 1024 * 1024)
             disk_list += f" disk{disk}"
         self.disk_list = disk_list
+
+        # Symlink the kmod directory so that gdb can find it later.
+        kmoddir = Path.cwd() / "kmoddir"
+        kmoddir.unlink(missing_ok=True)
+        kmoddir.symlink_to(self.build.kmod_stagedir)
 
         outputs = super().run(ctx)
         vm: FreeBSDVM = outputs['vm']
@@ -1747,6 +1753,14 @@ class OpenZFSTestSuiteTask(FreeBSDVMBootTask):
                 self._gdb("-ex", f"thread {e.cpuid + 1}")
             raise e
         return outputs
+
+    def _gdb(self, *args):
+        kmoddir = Path(os.readlink(Path.cwd() / "kmoddir"))
+        super()._gdb(*args, search_path=kmoddir)
+
+    actions = {
+        'gdb': _gdb,
+    }
 
 
 class FlatBuffersGitCheckoutTask(GitCheckoutTask):

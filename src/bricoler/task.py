@@ -320,7 +320,7 @@ class Task(ABC, metaclass=TaskMeta):
 
     def _run_action(self, action_name: str, action_args: List[str]) -> Any:
         with chdir(Path.cwd() / self.name):
-            self._chained_actions[action_name](self, action_args)
+            self._chained_actions[action_name](self, *action_args)
 
     def run_cmd(self, cmd: List[Any], *args, **kwargs) -> subprocess.CompletedProcess:
         # Ignore self.skip if the caller needs command output.
