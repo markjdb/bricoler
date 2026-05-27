@@ -1013,6 +1013,19 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
     }
 
 
+class FreeBSDSrcCIBuildTask(FreeBSDRegressionTestSuiteBuildTask):
+    # Use clean builds for CI.  Our build is underspecified and it's better not
+    # to rely on incremental builds if the goal is to reliably test code
+    # changes.  ccache will hopefully hide most of the overhead.
+    clean = True
+
+
+class FreeBSDRegressionTestSuiteCIVMImageTask(FreeBSDRegressionTestSuiteVMImageTask):
+    inputs = {
+        'build': FreeBSDSrcCIBuildTask,
+    }
+
+
 class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
     """
     Run the regression test suite in CI mode:
@@ -1033,6 +1046,7 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
 
     inputs = {
         'src': FreeBSDSrcGitCheckoutTask,
+        'vm_image': FreeBSDRegressionTestSuiteCIVMImageTask,
     }
 
     outputs = {
