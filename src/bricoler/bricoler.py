@@ -1528,6 +1528,18 @@ class OpenZFSBuildTask(Task):
             description="Clean build artifacts before building",
             default=False
         ),
+        'kasan': TaskParameter(
+            description="Build with ASAN instrumentation (kernel module only)",
+            default=False
+        ),
+        'kmsan': TaskParameter(
+            description="Build with MSAN instrumentation (kernel module only)",
+            default=False
+        ),
+        'kubsan': TaskParameter(
+            description="Build with UBSAN instrumentation (kernel module only)",
+            default=False
+        ),
         'sysdir': TaskParameter(
             description="Path to the FreeBSD kernel source to compile against",
             default=Path("/usr/src/sys")
@@ -1568,14 +1580,22 @@ class OpenZFSBuildTask(Task):
         with chdir(self.src.repo.path / "module"):
             if self.clean:
                 self.run_cmd(["make", "-f", "Makefile.bsd", "clean"])
-            self.run_cmd([
+            cmd = [
                 "make", "-s",
                 "-j", str(ctx.max_jobs),
                 "-f", "Makefile.bsd",
                 "CC=cc",
                 f"SYSDIR={self.sysdir}",
                 "WITH_DEBUG=true"
-            ])
+            ]
+            if self.kasan:
+                cmd.append("WITH_KASAN=true")
+            if self.kmsan:
+                cmd.append("WITH_KMSAN=true")
+            if self.kubsan:
+                cmd.append("WITH_KUBSAN=true")
+            self.run_cmd(cmd)
+
             self.run_cmd([
                 "make", "-s",
                 "-f", "Makefile.bsd",
