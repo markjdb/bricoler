@@ -25,6 +25,7 @@ class Config:
     max_jobs: int = os.cpu_count()
     parser: argparse.ArgumentParser
     skip: bool = False
+    wait: bool = False
     task_params: Dict[str, Dict[str, Any]] = {}
     workdir: Path
     uuid: uuid.UUID
@@ -65,6 +66,10 @@ class Config:
             '-S', '--skip',
             action='store_true',
             help='skip execution of dependent tasks')
+        parser.add_argument(
+            '-W', '--wait',
+            action='store_true',
+            help='wait for the lock to be released instead of exiting')
         parser.add_argument(
             '-w', '--workdir',
             metavar='DIR',
@@ -111,6 +116,7 @@ class Config:
         self.mail_to = opts.mail_to or self.config_file_object.get('mail_to')
         self.max_jobs = opts.max_jobs
         self.skip = opts.skip
+        self.wait = opts.wait
         self.workdir.mkdir(parents=True, exist_ok=True)
         self.config_path = Path(self.workdir / 'bricoler.json')
 
@@ -206,14 +212,17 @@ class Config:
 
     def lock(self):
         # Lock the configuration file to prevent concurrent modifications.
-        try:
-            self._locked_file = self.config_path.open('r+')
-            fcntl.flock(self._locked_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise RuntimeError(
-                f"Could not acquire lock on configuration file '{self.config_path}': "
-                "another instance of bricoler is running"
-            ) from None
+        self._locked_file = self.config_path.open('r+')
+        if self.wait:
+            fcntl.flock(self._locked_file, fcntl.LOCK_EX)
+        else:
+            try:
+                fcntl.flock(self._locked_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise RuntimeError(
+                    f"Could not acquire lock on configuration file '{self.config_path}': "
+                    "another instance of bricoler is running"
+                ) from None
 
     def usage(self) -> None:
         # XXX-MJ usage is not very good

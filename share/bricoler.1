@@ -21,6 +21,7 @@
 .Op Fl -<task1>/<param1>=<val1> Op Fl -<task2>/<param2>=<val2> Op ...
 .Op Fl -alias Ar alias
 .Op Fl -skip
+.Op Fl -wait
 .Nm
 .Ar task Ar action Op Ar args
 .Sh DESCRIPTION
@@ -112,6 +113,12 @@ if that variable is not set.
 Only one
 .Nm
 instance may run tasks in a given working directory at a given point in time.
+If the
+.Fl -wait
+option is specified,
+.Nm
+will block until the lock on the working directory is released, rather than
+exiting with an error.
 .Pp
 The
 .Fl -alias
