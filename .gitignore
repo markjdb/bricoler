@@ -1,3 +1,4 @@
 dist/*
 bricoler.json
 .claude
+__pycache__
