@@ -22,7 +22,7 @@ from typing import Dict, List, Optional, Tuple, Type, Union
 from .config import Config
 from .git import GitRepository
 from .mtree import MtreeFile
-from .task import Task, TaskParameter, TaskMeta, TaskSchedule
+from .task import Task, TaskParameter, TaskParameterBinding, TaskMeta, TaskSchedule
 from .util import EmailReport, chdir, host_machine, info, run_cmd, warn
 from .vm import FreeBSDVM, VMImage, VMHypervisor, BhyveRun, QEMURun, RVVMRun, SSHCommandRunner
 
@@ -1994,6 +1994,110 @@ class SyzkallerFuzzFreeBSDTask(Task):
 # - integration with project infrastructure, e.g., bugzilla, phabricator
 #   - src builds could have an option to apply patches from phab/GH first, for instance
 #
+def _show_task(sched: TaskSchedule) -> None:
+    target = sched.target
+
+    # Task name and description.
+    print(f"{target.name}:")
+    if target.__class__.__doc__ is not None:
+        print(target.__class__.__doc__.strip())
+    print()
+
+    # Dependency chain.
+    def _dep_chain(node, depth=0):
+        chain = [(node.task.name, depth)]
+        for child in node.children.values():
+            chain.extend(_dep_chain(child, depth + 1))
+        return chain
+
+    chain = _dep_chain(sched.schedule)
+    if len(chain) > 1:
+        print("Dependencies:")
+        for name, depth in chain[1:]:
+            print(f"  {'  ' * depth}{name}")
+        print()
+
+    # Actions.
+    actions = target._chained_actions
+    if len(actions) > 0:
+        print("Actions:")
+        for name in actions:
+            print(f"  {name}")
+        print()
+
+    # Parameters grouped by task.
+    if len(sched.parameters) == 0:
+        return
+
+    # Collect tasks in dependency order (target first, then dependencies).
+    tasks_ordered = []
+    seen = set()
+    for node in sched.schedule:
+        if node.task.name not in seen:
+            tasks_ordered.append(node.task)
+            seen.add(node.task.name)
+
+    # Compute the column width across all parameters.
+    width = 0
+    for task in tasks_ordered:
+        for name in task._chained_parameters:
+            width = max(width, len(name) + 2)
+
+    print("Parameters:")
+    first_group = True
+    for task in tasks_ordered:
+        params = task._chained_parameters
+        if len(params) == 0:
+            continue
+
+        if not first_group:
+            print()
+        first_group = False
+
+        if task.name != target.name:
+            print(f"  [{task.name}]")
+
+        for name, param in params.items():
+            binding = task.bindings.get(name)
+
+            # Format the type and choices.
+            if param.choices is not None:
+                choices = [_format_enum_value(c) for c in param.choices]
+                type_str = ", ".join(choices)
+            elif issubclass(param.type, Enum):
+                choices = [_format_enum_value(m) for m in param.type]
+                type_str = ", ".join(choices)
+            else:
+                type_str = param.typename
+
+            # Format the default value.
+            if binding is not None:
+                default_str = _format_enum_value(binding.value)
+            else:
+                default_str = str(param.default)
+
+            # Mark overridden defaults.
+            override_marker = ""
+            if binding is not None and \
+               binding.source == TaskParameterBinding.BindingType.OVERRIDDEN:
+                override_marker = " (overridden)"
+
+            desc = param.description
+            if param.required and (binding is None or binding.value is None):
+                desc += " (required)"
+
+            print(f"  {name+':':<{width}} {desc}")
+            print(f"  {'':>{width}} type: {type_str}")
+            print(f"  {'':>{width}} default: {default_str}{override_marker}")
+
+
+def _format_enum_value(val) -> str:
+    """Format a value, stripping the class prefix from Enum members."""
+    if isinstance(val, Enum):
+        return val.name.lower()
+    return str(val)
+
+
 def main() -> int:
     config = Config()
     try:
@@ -2026,18 +2130,7 @@ def main() -> int:
 
     sched = TaskSchedule(config)
     if args.show:
-        # XXX-MJ the formatting here is not good and we're omitting some info
-        print(f"{sched.target.name}:")
-        if sched.target.__class__.__doc__ is not None:
-            print(sched.target.__class__.__doc__.strip() + "\n")
-        else:
-            print("")
-        if len(sched.target.parameters) > 0:
-            print("Parameters:")
-            width = max(len(name) for name in sched.parameters.keys()) + 2
-            for name, param in sched.parameters.items():
-                print(f"{name+':':<{width}} {param[0].description}")
-                print(f"{'':{width+1}}{str(param[1])}")
+        _show_task(sched)
     elif args.list:
         for task in sched.tasks.values():
             for name in task.__class__.get_parameter_keys():
