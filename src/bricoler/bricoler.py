@@ -800,7 +800,7 @@ class FreeBSDVMBootTask(Task):
             addr = f.read().strip()
         (host, portstr) = addr.split(':', maxsplit=1)
         ssh = SSHCommandRunner((host, portstr), Path.cwd() / "ssh_key")
-        ssh.run_cmd()
+        ssh.run_cmd(list(args))
 
     actions = {
         'gdb': _gdb,
