@@ -6,6 +6,7 @@
 
 import functools
 import os
+import shutil
 import sys
 import uuid
 from abc import abstractmethod
@@ -131,7 +132,8 @@ class BhyveRun(VMRun):
             return BhyveRun.PrivModel.UNPRIV
         if run_cmd(["mdo", "test", "-w", "/dev/vmmctl"], check_result=False).returncode == 0:
             return BhyveRun.PrivModel.MDO
-        if run_cmd(["sudo", "-ln", "bhyve"], check_result=False).returncode == 0 and \
+        if shutil.which("sudo") is not None and \
+           run_cmd(["sudo", "-ln", "bhyve"], check_result=False).returncode == 0 and \
            run_cmd(["sudo", "-ln", "bhyvectl"], check_result=False).returncode == 0:
             return BhyveRun.PrivModel.SUDO
         return BhyveRun.PrivModel.INVALID
