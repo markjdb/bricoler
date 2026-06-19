@@ -855,6 +855,7 @@ class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
         "openvpn",
         "perl5",
         "pimd",
+        "pjdfstest",
         "porch",
         "python",
         "python3",
