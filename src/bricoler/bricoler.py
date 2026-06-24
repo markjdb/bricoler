@@ -261,6 +261,7 @@ class FreeBSDSrcBuildTask(Task):
             args = [
                 target,
                 "-ss",
+                "-de",
                 "-j", ctx.max_jobs,
                 "-DNO_ROOT",
                 f"DESTDIR={stagedir}",
@@ -286,6 +287,7 @@ class FreeBSDSrcBuildTask(Task):
                 "MAKEOBJDIRPREFIX": objdir,
                 "SRCCONF": "/dev/null",
                 "__MAKE_CONF": "/dev/null",
+                "SRC_ENV_CONF": "/dev/null",
             }
 
             self.src.repo.make(args, env=env)
