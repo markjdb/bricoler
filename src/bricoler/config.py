@@ -117,6 +117,7 @@ class Config:
         self.max_jobs = opts.max_jobs
         self.skip = opts.skip
         self.wait = opts.wait
+        self.workdir = opts.workdir
         self.workdir.mkdir(parents=True, exist_ok=True)
         self.config_path = Path(self.workdir / 'bricoler.json')
 
