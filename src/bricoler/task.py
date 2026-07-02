@@ -203,7 +203,11 @@ class TaskParameter:
             try:
                 val = self.type(s)
             except Exception as e:
-                raise ValueError(f"Value '{s}' is not of type {self.typename}") from e
+                msg = f"Value '{s}' is not of type {self.typename}"
+                if issubclass(self.type, Enum):
+                    members = ', '.join(m.value for m in self.type)
+                    msg += f" (expected one of: {members})"
+                raise ValueError(msg) from e
         return val
 
 
