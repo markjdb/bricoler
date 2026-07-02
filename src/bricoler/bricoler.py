@@ -2075,7 +2075,6 @@ def _show_task(sched: TaskSchedule) -> None:
         for name, param in params.items():
             binding = task.bindings.get(name)
 
-            # Format the type and choices.
             if param.choices is not None:
                 choices = [_format_enum_value(c) for c in param.choices]
                 type_str = ", ".join(choices)
@@ -2085,17 +2084,15 @@ def _show_task(sched: TaskSchedule) -> None:
             else:
                 type_str = param.typename
 
-            # Format the default value.
             if binding is not None:
-                default_str = _format_enum_value(binding.value)
+                value_str = _format_enum_value(binding.value)
             else:
-                default_str = str(param.default)
+                value_str = str(param.default)
 
-            # Mark overridden defaults.
-            override_marker = ""
-            if binding is not None and \
-               binding.source == TaskParameterBinding.BindingType.OVERRIDDEN:
-                override_marker = " (overridden)"
+            match binding.source:
+                case TaskParameterBinding.BindingType.DEFAULT: source = "default"
+                case TaskParameterBinding.BindingType.COMMAND_LINE: source = "command-line"
+                case TaskParameterBinding.BindingType.OVERRIDDEN: source = "overridden"
 
             desc = param.description
             if param.required and (binding is None or binding.value is None):
@@ -2103,7 +2100,7 @@ def _show_task(sched: TaskSchedule) -> None:
 
             print(f"  {name+':':<{width}} {desc}")
             print(f"  {'':>{width}} type: {type_str}")
-            print(f"  {'':>{width}} default: {default_str}{override_marker}")
+            print(f"  {'':>{width}} value: {value_str} ({source})")
 
 
 def _format_enum_value(val) -> str:
