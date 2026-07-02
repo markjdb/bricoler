@@ -24,7 +24,7 @@ from .git import GitRepository
 from .mtree import MtreeFile
 from .task import Task, TaskParameter, TaskParameterBinding, TaskMeta, TaskSchedule
 from .util import EmailReport, chdir, host_machine, info, run_cmd, warn
-from .vm import FreeBSDVM, VMImage, VMHypervisor, BhyveRun, QEMURun, RVVMRun, SSHCommandRunner
+from .vm import FreeBSDVM, VMImage, VMHypervisor, BhyveRun, QEMURun, RVVMRun, SSHCommandRunner, VMRun
 
 
 class KyuaDB:
@@ -702,6 +702,11 @@ class FreeBSDVMBootTask(Task):
     }
 
     parameters = {
+        'block_driver': TaskParameter(
+            description="Block driver to use for the VM's disks",
+            default=VMRun.BlockDriver.VIRTIO,
+            type=VMRun.BlockDriver
+        ),
         'disk_list': TaskParameter(
             description="A list of extra files to add as disks",
             type=str
@@ -723,6 +728,11 @@ class FreeBSDVMBootTask(Task):
         'ncpus': TaskParameter(
             description="Number of CPUs to allocate to the VM",
             default=2,
+        ),
+        'nic_driver': TaskParameter(
+            description="Network interface driver to use for the VM",
+            default=VMRun.NetworkDriver.VIRTIO,
+            type=VMRun.NetworkDriver
         ),
         'p9_shares': TaskParameter(
             description="Comma-separated list of shares of the form <share>:<path>",
@@ -752,6 +762,8 @@ class FreeBSDVMBootTask(Task):
             extra_disks=self.disk_list.split() if self.disk_list else [],
             memory=self.memory,
             ncpus=self.ncpus,
+            block_driver=self.block_driver,
+            nic_driver=self.nic_driver,
             p9_shares=p9_shares,
             ssh_key=self.vm_image.ssh_key,
         )

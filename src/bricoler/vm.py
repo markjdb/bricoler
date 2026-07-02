@@ -77,14 +77,14 @@ class VMHypervisor(Enum):
 
 class VMRun:
     class BlockDriver(Enum):
-        VIRTIO = 1,
-        AHCI = 2,
-        NVME = 3,
+        VIRTIO = 'virtio'
+        AHCI = 'ahci'
+        NVME = 'nvme'
 
     class NetworkDriver(Enum):
-        VIRTIO = 1,
-        E1000 = 2,
-        NONE = 3,
+        VIRTIO = 'virtio'
+        E1000 = 'e1000'
+        NONE = 'none'
 
     def __init__(
         self,
