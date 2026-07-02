@@ -143,6 +143,5 @@ def warn(message: str):
 
 
 def unused_tcp_addr() -> Tuple[str, int]:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('127.0.0.1', 0))
+    with socket.create_server(('localhost', 0), family=socket.AF_INET) as s:
         return s.getsockname()
