@@ -182,6 +182,10 @@ class FreeBSDSrcBuildTask(Task):
             description="Kernel configuration to build",
             default="GENERIC",
         ),
+        'kernel_only': TaskParameter(
+            description="Only build kernel targets",
+            default=False
+        ),
         'machine': TaskParameter(
             description="Target machine architecture",
             default=host_machine(),
@@ -254,7 +258,9 @@ class FreeBSDSrcBuildTask(Task):
         mtree = MtreeFile()
         for target in self.make_targets.split():
             metalog = stagedir / f"METALOG.{target}.mtree"
-            if not self.skip:
+
+            skip = self.skip or (self.kernel_only and target not in ["buildkernel", "installkernel"])
+            if not skip:
                 with open(metalog, 'w') as f:
                     f.truncate(0)
 
@@ -290,7 +296,8 @@ class FreeBSDSrcBuildTask(Task):
                 "SRC_ENV_CONF": "/dev/null",
             }
 
-            self.src.repo.make(args, env=env)
+            if not skip:
+                self.src.repo.make(args, env=env)
 
             mtree.load(metalog, append=True, contents_root=stagedir)
 
