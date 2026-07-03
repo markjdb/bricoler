@@ -860,7 +860,9 @@ class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
 
     packages = " ".join([
         "coreutils",
+        "e2fsprogs-core",
         "filesystems/ext2",
+        "fusefs-ext2",
         "gdb",
         "git-lite",
         "gtar",
