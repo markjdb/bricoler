@@ -346,6 +346,11 @@ class FreeBSDVMImageTask(Task):
             type=FreeBSDVMImageFilesystem,  # XXX-MJ validate enum
             default=FreeBSDVMImageFilesystem.UFS,
         ),
+        'fstab_entries': TaskParameter(
+            description="Additional fstab entries to add to the image",
+            type=str,  # XXX-MJ List[str]
+            default=''
+        ),
         'hostname': TaskParameter(
             description="Hostname for the VM",
             default='freebsd',
@@ -474,7 +479,8 @@ class FreeBSDVMImageTask(Task):
                         """
                         none /dev/fd fdescfs rw 0 0
                         /dev/gpt/swap non swap sw 0 0
-                        """)
+                        """,
+                        *[entry for entry in self.fstab_entries.split('\n')])
 
         add_config_file("boot/loader.conf",
                         "autoboot_delay=1",
