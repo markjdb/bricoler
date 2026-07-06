@@ -472,6 +472,15 @@ class FreeBSDVMImageTask(Task):
                         zpool_upgrade={zfs_pool_name}
                         """ if self.filesystem == FreeBSDVMImageFilesystem.ZFS else "")
 
+        fstab_entries = self.fstab_entries.split('\n')
+        for entry in fstab_entries:
+            entry_components = entry.split(' ')
+            if len(entry_components) < 2:
+                raise ValueError(f"invalid fstab entry: {entry}")
+            mountpoint = entry_components[1]
+            mountpoint = mountpoint.lstrip('/')
+            metalog.add_dir(Path(mountpoint))
+
         add_config_file("etc/fstab",
                         """
                         /dev/gpt/rootfs / ufs rw 1 1
@@ -480,7 +489,7 @@ class FreeBSDVMImageTask(Task):
                         none /dev/fd fdescfs rw 0 0
                         /dev/gpt/swap non swap sw 0 0
                         """,
-                        *[entry for entry in self.fstab_entries.split('\n')])
+                        *[entry for entry in fstab_entries])
 
         add_config_file("boot/loader.conf",
                         "autoboot_delay=1",
