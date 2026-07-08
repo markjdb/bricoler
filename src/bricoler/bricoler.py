@@ -215,6 +215,7 @@ class FreeBSDSrcBuildTask(Task):
     outputs = {
         'machine': str,
         'metalog': MtreeFile,
+        'objdir': Path,
         'repo': FreeBSDSrcRepository,
         'stagedir': Path,
     }
@@ -304,6 +305,7 @@ class FreeBSDSrcBuildTask(Task):
         return {
             'machine': f"{machine}/{machine_arch}",
             'metalog': mtree,
+            'objdir': objdir / self.src.repo.path.relative_to("/") / f"{machine}.{machine_arch}",
             'repo': self.src.repo,
             'stagedir': stagedir,
         }
@@ -336,6 +338,7 @@ class FreeBSDVMImageTask(Task):
 
     outputs = {
         'image': VMImage,
+        'objdir': Path,
         'ssh_key': Path,
         'sysroot': Path,
     }
@@ -704,6 +707,7 @@ class FreeBSDVMImageTask(Task):
         self.run_cmd(mkimg_cmd)
 
         outputs['image'] = VMImage(vm_image_path, machine, self.filesystem.value)
+        outputs['objdir'] = self.build.objdir
         outputs['sysroot'] = stagedir
 
         return outputs
@@ -1861,9 +1865,13 @@ class SyzkallerBuildTask(Task):
             description="Path to kernel sources",
             type=Path,
         ),
+        'presubmit': TaskParameter(
+            description="Run presubmit checks before building",
+            default=False,
+        ),
         'test': TaskParameter(
             description="Run tests after building",
-            default=True
+            default=True,
         ),
     }
 
@@ -1879,14 +1887,20 @@ class SyzkallerBuildTask(Task):
 
     def run(self, ctx):
         with chdir(self.src.repo.path):
+            def make(*args, **kwargs):
+                gmakeenv={
+                    "PATH": str(self.flatc.repo.path) + ":" + os.environ.get("PATH"),
+                    "GOMAXPROCS": str(ctx.max_jobs),
+                }
+                self.run_cmd(["gmake", *args], env=gmakeenv, **kwargs)
             if self.srcdir is not None:
-                self.run_cmd(["gmake", "extract", f"SOURCEDIR={self.srcdir}"])
-                self.run_cmd(["gmake", "generate"],
-                             env={"PATH": str(self.flatc.repo.path) + ":" + os.environ.get("PATH")})
-            env = {'GOMAXPROCS': str(ctx.max_jobs)}
-            self.run_cmd(["gmake"], env=env)
-            if self.test:
-                self.run_cmd(["gmake", "test"], env=env)
+                make("extract", f"SOURCEDIR={self.srcdir}")
+                make("generate")
+            make()
+            if self.presubmit:
+                make("presubmit")
+            elif self.test:
+                make("test")
         return {
             'bindir': self.src.repo.path / "bin",
             'repo': self.src.repo,
@@ -1955,6 +1969,7 @@ class SyzkallerFuzzFreeBSDTask(Task):
     }
 
     inputs = {
+        'freebsd_src': FreeBSDSrcGitCheckoutTask,
         'syzkaller': SyzkallerBuildTask,
         'vm_image': SyzkallerFuzzFreeBSDVMImageTask,
     }
@@ -1987,6 +2002,8 @@ class SyzkallerFuzzFreeBSDTask(Task):
 
             image_path = self.vm_image.image.path
 
+        objdir = self.vm_image
+
         workdir = Path.cwd() / "workdir"
         workdir.mkdir(exist_ok=True)
 
@@ -2001,6 +2018,8 @@ class SyzkallerFuzzFreeBSDTask(Task):
             'ssh_user': "root",
             'sshkey': str(self.vm_image.ssh_key),
             'procs': 2,
+            'kernel_src': str(self.freebsd_src.repo.path),
+            'kernel_obj': str(self.vm_image.objdir / "sys" / "SYZKALLER"),
             'vm': {
                 'cpu': self.vm_ncpu,
                 'mem': str(self.vm_memory) + "M",
@@ -2009,12 +2028,13 @@ class SyzkallerFuzzFreeBSDTask(Task):
         }
 
         # Write the parameters to a JSON config file.
-        with open("syz-manager.cfg", "w") as f:
+        config = Path("syz-manager.cfg").resolve()
+        with open(config, "w") as f:
             json.dump(params, f, indent=2)
 
         cmd = [
             self.syzkaller.bindir / "syz-manager",
-            "-config", "syz-manager.cfg",
+            "-config", config,
             "-vv", str(self.verbosity)
         ]
         if self.debug:
