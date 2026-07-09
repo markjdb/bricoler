@@ -1525,6 +1525,7 @@ class EC2ListAMIsTask(EC2MetaTask):
     }
 
     def run(self, ctx):
+        ctx.config.unlock()
         provider = EC2Provider(self.config, self.aws_region)
         amis = provider.freebsd_amis(tuple(self.owners.split()))
         json.dump(amis, sys.stdout, indent=2)
@@ -1549,6 +1550,7 @@ class EC2ListInstanceTypesTask(EC2MetaTask):
     }
 
     def run(self, ctx):
+        ctx.config.unlock()
         provider = EC2Provider(self.config, self.aws_region)
         instance_types = provider.instance_types()
         for it in instance_types:
