@@ -1431,8 +1431,10 @@ class EC2Provider:
 
     @functools.cache
     def instance_types(self):
-        response = self.client.describe_instance_types()
-        instance_types = response['InstanceTypes']
+        instance_types = []
+        paginator = self.client.get_paginator('describe_instance_types')
+        for page in paginator.paginate():
+            instance_types.extend(page['InstanceTypes'])
         instance_types.sort(key=lambda x: x['InstanceType'])
         return instance_types
 
