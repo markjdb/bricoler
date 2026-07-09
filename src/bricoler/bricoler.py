@@ -1555,12 +1555,27 @@ class EC2ListInstanceTypesTask(EC2MetaTask):
         ctx.config.unlock()
         provider = EC2Provider(self.config, self.aws_region)
         instance_types = provider.instance_types()
+        rows = []
         for it in instance_types:
             if it['VCpuInfo']['DefaultVCpus'] < self.min_ncpu:
                 continue
             if it['MemoryInfo']['SizeInMiB'] < self.min_memory:
                 continue
-            json.dump(it, sys.stdout, indent=2)
+            rows.append((
+                it['InstanceType'],
+                str(it['VCpuInfo']['DefaultVCpus']),
+                f"{it['MemoryInfo']['SizeInMiB'] / 1024:.1f}",
+                ','.join(it['ProcessorInfo']['SupportedArchitectures']),
+                it.get('Hypervisor', 'none'),
+            ))
+        headers = ('Name', 'vCPUs', 'Memory (GB)', 'Arch', 'Hypervisor')
+        widths = [max(len(h), max((len(r[i]) for r in rows), default=0))
+                  for i, h in enumerate(headers)]
+        fmt = '  '.join(f'{{:<{w}}}' for w in widths)
+        print(fmt.format(*headers))
+        print(fmt.format(*('-' * w for w in widths)))
+        for row in rows:
+            print(fmt.format(*row))
         return {}
 
 
