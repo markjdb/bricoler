@@ -431,7 +431,7 @@ class TaskSchedule:
                     f"Task '{node.task.name}' is missing required parameters: {', '.join(missing)}"
                 )
 
-        ctx = SimpleNamespace(max_jobs=self.config.max_jobs)
+        ctx = SimpleNamespace(config=self.config, max_jobs=self.config.max_jobs)
         with chdir(self.config.workdir):
             return self.schedule._run(ctx)
 

@@ -225,6 +225,14 @@ class Config:
                     "another instance of bricoler is running"
                 ) from None
 
+    def unlock(self):
+        if hasattr(self, '_locked_file'):
+            fcntl.flock(self._locked_file, fcntl.LOCK_UN)
+            self._locked_file.close()
+            del self._locked_file
+        else:
+            raise RuntimeError("Configuration file is not locked")
+
     def usage(self) -> None:
         # XXX-MJ usage is not very good
         self.parser.print_usage()
