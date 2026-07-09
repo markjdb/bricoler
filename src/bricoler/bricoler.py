@@ -1530,7 +1530,15 @@ class EC2ListAMIsTask(EC2MetaTask):
         ctx.config.unlock()
         provider = EC2Provider(self.config, self.aws_region)
         amis = provider.freebsd_amis(tuple(self.owners.split()))
-        json.dump(amis, sys.stdout, indent=2)
+        rows = [(ami['ImageId'], ami['Name']) for ami in amis]
+        headers = ('ImageId', 'Name')
+        widths = [max(len(h), max((len(r[i]) for r in rows), default=0))
+                  for i, h in enumerate(headers)]
+        fmt = '  '.join(f'{{:<{w}}}' for w in widths)
+        print(fmt.format(*headers))
+        print(fmt.format(*('-' * w for w in widths)))
+        for row in rows:
+            print(fmt.format(*row))
         return {}
 
 
