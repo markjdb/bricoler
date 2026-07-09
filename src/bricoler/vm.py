@@ -20,10 +20,11 @@ import pexpect
 
 
 class SSHCommandRunner:
-    def __init__(self, addr: Tuple[str, Union[str, int]], key: Path):
+    def __init__(self, addr: Tuple[str, Union[str, int]], key: Path, user="root"):
         self.addr = addr[0]
         self.port = addr[1]
         self.key = key
+        self.user = user
 
     def run_cmd(self, cmd: List[str] = [], **kwargs):
         ssh_cmd = [
@@ -32,7 +33,7 @@ class SSHCommandRunner:
             "-o", "StrictHostKeyChecking=no",
             "-p", str(self.port),
             "-i", str(self.key),
-            f"root@{self.addr}",
+            f"{self.user}@{self.addr}",
         ] + cmd
         return run_cmd(ssh_cmd, check_result=True, **kwargs)
 
