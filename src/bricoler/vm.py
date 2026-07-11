@@ -223,7 +223,7 @@ class BhyveRun(VMRun):
         if self.nic_driver != VMRun.NetworkDriver.NONE:
             add_device(f"{self.network_driver_name()},slirp,open,hostfwd=tcp:{self.ssh_addr[0]}:{self.ssh_addr[1]}-:22")
         for share in self.p9_shares:
-            add_device(f"virtio-9p,{share[0]}={share[1]}")
+            add_device(f"virtio-9p,{share[0]}={str(share[1])}")
 
         bhyve_cmd.extend([vmname])
 

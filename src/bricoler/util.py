@@ -145,3 +145,13 @@ def warn(message: str):
 def unused_tcp_addr() -> Tuple[str, int]:
     with socket.create_server(('localhost', 0), family=socket.AF_INET) as s:
         return s.getsockname()
+
+
+def parse_p9(line):
+        ret = []
+        for share in line.split(','):
+            pair = share.split(':')
+            if len(pair) < 2:
+                raise ValueError(f"failed to parse p9 share {share}")
+            ret.append((pair[0], Path(pair[1])))
+        return ret
