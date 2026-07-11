@@ -23,7 +23,7 @@ from .config import Config
 from .git import GitRepository
 from .mtree import MtreeFile
 from .task import Task, TaskParameter, TaskParameterBinding, TaskMeta, TaskSchedule
-from .util import EmailReport, chdir, host_machine, info, run_cmd, warn
+from .util import EmailReport, chdir, host_machine, info, parse_p9, run_cmd, warn
 from .vm import FreeBSDVM, VMImage, VMHypervisor, BhyveRun, QEMURun, RVVMRun, SSHCommandRunner, VMRun
 
 
@@ -762,7 +762,8 @@ class FreeBSDVMBootTask(Task):
         ),
         'p9_shares': TaskParameter(
             description="Comma-separated list of shares of the form <share>:<path>",
-            type=str,  # XXX-MJ List[Tuple[str, Path]]
+            default=[],
+            type=parse_p9
         ),
         'reboot': TaskParameter(
             description="Restart the VM when it exits due to a reboot",
@@ -779,10 +780,6 @@ class FreeBSDVMBootTask(Task):
             case VMHypervisor.BHYVE: cls = BhyveRun
             case VMHypervisor.QEMU: cls = QEMURun
             case VMHypervisor.RVVM: cls = RVVMRun
-        if self.p9_shares:
-            p9_shares = [tuple(desc.split(':')) for desc in self.p9_shares.split(',')]
-        else:
-            p9_shares = []
         vmrun = cls(
             image=self.vm_image.image,
             extra_disks=self.disk_list.split() if self.disk_list else [],
@@ -790,7 +787,7 @@ class FreeBSDVMBootTask(Task):
             ncpus=self.ncpus,
             block_driver=self.block_driver,
             nic_driver=self.nic_driver,
-            p9_shares=p9_shares,
+            p9_shares=self.p9_shares,
             ssh_key=self.vm_image.ssh_key,
         )
 
