@@ -206,7 +206,6 @@ class BhyveRun(VMRun):
         if self.image.machine.startswith('amd64/') or self.image.machine.startswith('i386/'):
             bhyve_cmd.extend([
                 "-H",
-                "-M",
                 "-l", "com1,stdio",
                 "-l", f"bootrom,{bootrom}",
             ])
@@ -216,6 +215,7 @@ class BhyveRun(VMRun):
                 "-o", "console=stdio",
                 "-o", f"bootrom={bootrom}"
             ])
+        bhyve_cmd.extend(["-M"]) # Needed for unprivileged bhyve.
         bhyve_cmd.extend(["-G", f"{self.gdb_addr[0]}:{self.gdb_addr[1]}"])
         add_device(f"{self.block_driver_name()},{self.image.path}")
         for disk in self.extra_disks:
