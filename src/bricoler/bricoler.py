@@ -475,7 +475,7 @@ class FreeBSDVMImageTask(Task):
                         zpool_upgrade={zfs_pool_name}
                         """ if self.filesystem == FreeBSDVMImageFilesystem.ZFS else "")
 
-        fstab_entries = self.fstab_entries.split('\n')
+        fstab_entries = [e for e in self.fstab_entries.split('\n') if e.strip()]
         for entry in fstab_entries:
             entry_components = entry.split(' ')
             if len(entry_components) < 2:
