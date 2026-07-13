@@ -206,17 +206,17 @@ class BhyveRun(VMRun):
         if self.image.machine.startswith('amd64/') or self.image.machine.startswith('i386/'):
             bhyve_cmd.extend([
                 "-H",
+                "-M",
                 "-l", "com1,stdio",
                 "-l", f"bootrom,{bootrom}",
-                "-G", f"{self.gdb_addr[0]}:{self.gdb_addr[1]}",
-                "-M",
             ])
             add_device("lpc")
         else:
             bhyve_cmd.extend([
                 "-o", "console=stdio",
-                "-o", f"bootrom,{bootrom}"
+                "-o", f"bootrom={bootrom}"
             ])
+        bhyve_cmd.extend(["-G", f"{self.gdb_addr[0]}:{self.gdb_addr[1]}"])
         add_device(f"{self.block_driver_name()},{self.image.path}")
         for disk in self.extra_disks:
             add_device(f"{self.block_driver_name()},{disk}")
