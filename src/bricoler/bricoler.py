@@ -814,7 +814,7 @@ class FreeBSDVMBootTask(Task):
 
         return {'vm': vm}
 
-    def _gdb(self, *args, search_path=None, **kwargs):
+    def _gdb_cmd(self, search_path=None):
         if shutil.which("gdb") is None:
             raise ValueError("gdb is not available")
         sysroot = Path(os.readlink(Path.cwd() / "sysroot"))
@@ -822,7 +822,7 @@ class FreeBSDVMBootTask(Task):
             addr = f.read().strip()
         (host, portstr) = addr.split(':', maxsplit=1)
         port = int(portstr)
-        gdb_cmd = [
+        return [
             "gdb",
             "-ex", f"set sysroot {Path.cwd() / sysroot}",
             *["-ex", f"set solib-search-path {search_path}" if search_path is not None else []],
@@ -830,7 +830,33 @@ class FreeBSDVMBootTask(Task):
             "-ex", f"source {sysroot / 'usr/lib/debug/boot/kernel/kernel-gdb.py'}",
             "-ex", f"target remote {host}:{port}",
         ]
+
+    def _gdb(self, *args, search_path=None, **kwargs):
+        gdb_cmd = self._gdb_cmd(search_path=search_path)
         self.run_cmd(gdb_cmd + list(args), process_group=0)
+
+    def _gdb_backtrace(self, cpuid, search_path=None):
+        """
+        Run gdb in batch mode to get a backtrace with line numbers from
+        the panicking thread.
+        """
+        logfile = Path.cwd() / "gdb-backtrace.txt"
+        gdb_cmd = self._gdb_cmd(search_path=search_path)
+        gdb_cmd += [
+            "-ex", f"thread {cpuid + 1}",
+            "-ex", f"set logging file {logfile}",
+            "-ex", "set logging enabled on",
+            "-ex", "backtrace",
+            "-ex", "set logging enabled off",
+            "-ex", "quit",
+            "-batch",
+        ]
+        try:
+            run_cmd(gdb_cmd, capture_output=True)
+            return logfile.read_text(errors='replace').rstrip()
+        except Exception as e:
+            warn(f"Failed to get gdb backtrace: {e}")
+            return None
 
     def _ssh(self, *args):
         with open(Path.cwd() / "ssh-addr", "r") as f:
@@ -1127,6 +1153,11 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
             report += duration_line() + "\n"
             report += f"The VM panicked during the test run: {e.panicstr}\n\n"
             report += f"Stack trace:\n{e.backtrace}\n"
+
+            gdb_bt = self._gdb_backtrace(e.cpuid)
+            if gdb_bt is not None:
+                report += f"\ngdb backtrace:\n{gdb_bt}\n"
+
             return {
                 'email': EmailReport(
                     subject=subject,
