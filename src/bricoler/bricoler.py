@@ -1945,6 +1945,15 @@ class SyzkallerFuzzFreeBSDBuildTask(FreeBSDSrcBuildAndInstallTask):
 
 
 class SyzkallerFuzzFreeBSDVMImageTask(FreeBSDVMImageTask):
+    rc_kld_list = " ".join([
+        "cryptodev",
+        "filemon",
+        "ipsec",
+        "pf",
+        "sem",
+        "tcp_rack",
+    ])
+
     inputs = {
         'build': SyzkallerFuzzFreeBSDBuildTask,
     }
