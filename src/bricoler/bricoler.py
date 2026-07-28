@@ -845,6 +845,7 @@ class FreeBSDVMBootTask(Task):
         gdb_cmd += [
             "-ex", f"thread {cpuid + 1}",
             "-ex", f"set logging file {logfile}",
+            "-ex", "set logging overwrite on",
             "-ex", "set logging enabled on",
             "-ex", "backtrace",
             "-ex", "set logging enabled off",
