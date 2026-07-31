@@ -1981,6 +1981,7 @@ class SyzkallerFuzzFreeBSDVMImageTask(FreeBSDVMImageTask):
         "cryptodev",
         "filemon",
         "ipsec",
+        "ip_mroute",
         "pf",
         "sem",
         "tcp_rack",
