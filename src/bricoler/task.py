@@ -177,6 +177,10 @@ class TaskParameter:
             self.type = builtins.type(default)
         elif self.type is None:
             self.type = str
+        if not isinstance(self.type, builtins.type):
+            raise TypeError(
+                f"TaskParameter type must be a Python type, got {self.type!r}"
+            )
         self._initialized = True
 
     def __setattr__(self, key, value):
