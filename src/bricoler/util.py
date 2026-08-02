@@ -147,11 +147,19 @@ def unused_tcp_addr() -> Tuple[str, int]:
         return s.getsockname()
 
 
-def parse_p9(line):
-        ret = []
+class P9ShareList(list):
+    """A list of (name, path) tuples representing 9pfs shares."""
+    def __init__(self, line=''):
+        if isinstance(line, list):
+            super().__init__(line)
+            return
+        if line == '':
+            super().__init__()
+            return
+        shares = []
         for share in line.split(','):
             pair = share.split(':')
             if len(pair) < 2:
                 raise ValueError(f"failed to parse p9 share {share}")
-            ret.append((pair[0], Path(pair[1])))
-        return ret
+            shares.append((pair[0], Path(pair[1])))
+        super().__init__(shares)

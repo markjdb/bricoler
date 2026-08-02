@@ -23,7 +23,7 @@ from .config import Config
 from .git import GitRepository
 from .mtree import MtreeFile
 from .task import Task, TaskParameter, TaskParameterBinding, TaskMeta, TaskSchedule
-from .util import EmailReport, chdir, host_machine, info, parse_p9, run_cmd, warn
+from .util import EmailReport, P9ShareList, chdir, host_machine, info, run_cmd, warn
 from .vm import FreeBSDVM, VMImage, VMHypervisor, BhyveRun, QEMURun, RVVMRun, SSHCommandRunner, VMRun
 
 
@@ -762,8 +762,8 @@ class FreeBSDVMBootTask(Task):
         ),
         'p9_shares': TaskParameter(
             description="Comma-separated list of shares of the form <share>:<path>",
-            default=[],
-            type=parse_p9
+            default=P9ShareList(),
+            type=P9ShareList,
         ),
         'reboot': TaskParameter(
             description="Restart the VM when it exits due to a reboot",
