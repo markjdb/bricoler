@@ -1009,6 +1009,10 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
             description="Number of tests to run in parallel",
             default=os.cpu_count() // 2,  # XXX-MJ duplicating the ncpus value
         ),
+        'pause': TaskParameter(
+            description="Pause after the test suite finishes instead of powering off the VM",
+            default=False,
+        ),
         'tests': TaskParameter(
             description="A space-separated list of test cases or test suites to run, "
                         "or the empty string to run all tests",
@@ -1057,6 +1061,11 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
 
             lingering_jails = ssh.get_output(["jls", "-v", "-d", "name"])
             uname_a = ssh.get_output(["uname", "-a"])
+
+            if self.pause:
+                info("Pausing after test run, leaving VM running")
+                while True:
+                    time.sleep(60)
 
             # We don't really need to power off the VM, but:
             # - doing so might reveal a bug,
