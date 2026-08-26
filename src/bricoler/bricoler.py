@@ -1873,6 +1873,82 @@ class OpenZFSTestSuiteTask(FreeBSDVMBootTask):
     }
 
 
+class Stress2VMImageTask(FreeBSDVMImageTask):
+    """
+    Build a FreeBSD VM image with the stress2 test suite installed.
+    """
+
+    image_size = 100
+
+    inputs = {
+        'src': FreeBSDSrcGitCheckoutTask,
+        'build': FreeBSDSrcBuildAndInstallTask,
+    }
+
+    def run(self, ctx):
+        mtree = self.build.metalog
+        def add_overlay(root: Path, prefix: Path) -> None:
+            if not root.is_dir():
+                raise ValueError(f"Overlay path '{root}' is not a directory")
+            for item in root.rglob('*'):
+                rel = prefix / item.relative_to(root)
+                if item.is_dir():
+                    mtree.add_dir(rel)
+                elif item.is_file():
+                    mtree.add_file(item, rel)
+                elif item.is_symlink():
+                    mtree.add_symlink(src_symlink=item, path_in_image=rel)
+                else:
+                    raise ValueError(
+                        f"Unsupported file type for overlay: {item}"
+                    )
+
+        # Install the stress2 test suite to /stress2 in the image.
+        add_overlay(self.src.repo.path / "tools/test/stress2", Path("stress2"))
+
+        return super().run(ctx)
+
+
+class Stress2Task(FreeBSDVMBootTask):
+    """
+    Boot a virtual machine and run the stress2 test suite.
+    """
+    name = "stress2"
+
+    interactive = False
+    ncpus = os.cpu_count() // 2
+    memory = 1024 * (os.cpu_count() // 2)
+
+    inputs = {
+        'vm_image': Stress2VMImageTask,
+    }
+
+    def run(self, ctx):
+        outputs = super().run(ctx)
+        vm: FreeBSDVM = outputs['vm']
+        if vm is None:
+            raise ValueError(
+                "Cannot run stress2, VM must be run in non-interactive mode"
+            )
+
+        try:
+            vm.boot_to_login()
+            # Add a stress2 user.  We should really do this with nuageinit.
+            vm.sendline("pw useradd stress2 -m -s /bin/sh")
+            vm.wait_for_prompt()
+            vm.sendline("echo stress2 | make -C /stress2")
+            vm.wait_for_prompt()
+            vm.sendline("make -C /stress2 test")
+            vm.wait_for_prompt()
+
+            vm.poweroff()
+        except FreeBSDVM.PanicException as e:
+            if self.gdb_on_panic:
+                self._gdb("-ex", f"thread {e.cpuid + 1}")
+            raise e
+        return {}
+
+
 class FlatBuffersGitCheckoutTask(GitCheckoutTask):
     """
     Clone the FlatBuffers repository, or update an existing clone.
