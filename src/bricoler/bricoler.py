@@ -418,18 +418,6 @@ class FreeBSDVMImageTask(Task):
                              Path("root/.ssh/authorized_keys"))
             outputs['ssh_key'] = keyfile
 
-        def add_overlay(root: Path) -> None:
-            if not root.is_dir():
-                raise ValueError(f"Overlay path '{root}' is not a directory")
-            for item in root.rglob('*'):
-                rel = item.relative_to(root)
-                if item.is_dir():
-                    metalog.add_dir(rel)
-                elif item.is_file():
-                    metalog.add_file(item, rel)
-                else:
-                    warn(f"Skipping unsupported overlay item: {item}")
-
         def add_config_file(
             _path: Union[Path, str],
             *args,
@@ -452,7 +440,7 @@ class FreeBSDVMImageTask(Task):
             metalog.add_file(path.resolve(), path)
 
         if self.overlay is not None:
-            add_overlay(self.overlay)
+            metalog.add_overlay(self.overlay)
 
         add_config_file("etc/ssh/sshd_config",
                         "PermitRootLogin without-password",
@@ -576,7 +564,7 @@ class FreeBSDVMImageTask(Task):
                 else:
                     raise ValueError(f"Could not find fetched {pkg_pkg} in {pkg_dir / 'All'}")
 
-            add_overlay(stage_dir)
+            metalog.add_overlay(stage_dir)
 
             add_config_file("etc/pkg/local.conf",
                             f"""
@@ -1790,23 +1778,7 @@ class OpenZFSTestSuiteVMImageTask(FreeBSDVMImageTask):
         mtree.add_file(kmoddir / "openzfs.ko.debug",
                        Path("usr/lib/debug/boot/kernel/openzfs.ko"))
 
-        def add_overlay(root: Path) -> None:
-            if not root.is_dir():
-                raise ValueError(f"Overlay path '{root}' is not a directory")
-            for item in root.rglob('*'):
-                rel = item.relative_to(root)
-                if item.is_dir():
-                    mtree.add_dir(rel)
-                elif item.is_file():
-                    mtree.add_file(item, rel)
-                elif item.is_symlink():
-                    mtree.add_symlink(src_symlink=item, path_in_image=rel)
-                else:
-                    raise ValueError(
-                        f"Unsupported file type for overlay: {item}"
-                    )
-
-        add_overlay(self.build.user_stagedir)
+        mtree.add_overlay(self.build.user_stagedir)
 
         return super().run(ctx)
 
@@ -1883,24 +1855,9 @@ class Stress2VMImageTask(FreeBSDVMImageTask):
 
     def run(self, ctx):
         mtree = self.build.metalog
-        def add_overlay(root: Path, prefix: Path) -> None:
-            if not root.is_dir():
-                raise ValueError(f"Overlay path '{root}' is not a directory")
-            for item in root.rglob('*'):
-                rel = prefix / item.relative_to(root)
-                if item.is_dir():
-                    mtree.add_dir(rel)
-                elif item.is_file():
-                    mtree.add_file(item, rel)
-                elif item.is_symlink():
-                    mtree.add_symlink(src_symlink=item, path_in_image=rel)
-                else:
-                    raise ValueError(
-                        f"Unsupported file type for overlay: {item}"
-                    )
 
         # Install the stress2 test suite to /stress2 in the image.
-        add_overlay(self.src.repo.path / "tools/test/stress2", Path("stress2"))
+        mtree.add_overlay(self.src.repo.path / "tools/test/stress2", Path("stress2"))
 
         return super().run(ctx)
 

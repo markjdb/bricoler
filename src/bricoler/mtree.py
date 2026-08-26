@@ -408,3 +408,18 @@ class MtreeFile:
 
     def walk(self, top) -> Iterator[tuple[MtreePath, list[str], list[str]]]:
         return self._mtree.walk(top)
+
+    def add_overlay(self, root: Path, prefix: Path = Path('.')) -> None:
+        """Recursively add all files and directories under root into the mtree, rooted at prefix."""
+        if not root.is_dir():
+            raise ValueError(f"Overlay path '{root}' is not a directory")
+        for item in root.rglob('*'):
+            rel = prefix / item.relative_to(root)
+            if item.is_dir():
+                self.add_dir(rel)
+            elif item.is_file():
+                self.add_file(item, rel)
+            elif item.is_symlink():
+                self.add_symlink(src_symlink=item, path_in_image=str(rel))
+            else:
+                raise ValueError(f"Unsupported file type for overlay: {item}")
