@@ -1438,10 +1438,6 @@ class EC2Provider:
             {'Name': "tag:bricoler", 'Values': [tag_value]},
         ]
 
-        shutil.rmtree(self.ssh_key_dir, ignore_errors=True)
-        for key_pair in self.resource.key_pairs.filter(Filters=filters):
-            key_pair.delete()
-
         instances = self.resource.instances.filter(Filters=filters)
         for instance in instances:
             instance.terminate()
