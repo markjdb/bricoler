@@ -1197,11 +1197,16 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
                 for test_id in confirmed_failures:
                     info(f"  {test_id}")
 
+        flaky_set = set(flaky)
+        confirmed_failed = [t for t in db.failed() if t not in flaky_set]
+        confirmed_broken = [t for t in db.broken() if t not in flaky_set]
+
         subject = f"{hostname}: FreeBSD regression test suite results #{curr_run} ({branch})"
         report += "The test run completed successfully, with "
         report += f"{len(db.passed())} passed, "
-        report += f"{len(db.failed())} failed, "
-        report += f"{len(db.broken())} broken, and "
+        report += f"{len(confirmed_failed)} failed, "
+        report += f"{len(confirmed_broken)} broken, "
+        report += f"{len(flaky)} flaky, and "
         report += f"{len(db.skipped())} skipped test cases.\n"
 
         # Compare with the previous run.
@@ -1233,14 +1238,16 @@ class FreeBSDRegressionTestSuiteCITask(FreeBSDRegressionTestSuiteTask):
                     for t in added_tests:
                         report += f"  {t}\n"
 
-        for result, tests in [("Failed", db.failed()), ("Broken", db.broken())]:
-            if len(tests) > 0:
-                report += f"\n{result} test cases:\n"
-                for test_id in tests:
-                    report += f"  {test_id}"
-                    if test_id in flaky:
-                        report += "    (flaky, passed after retry)"
-                    report += "\n"
+        for result, confirmed in [("Failed", confirmed_failed), ("Broken", confirmed_broken)]:
+            if confirmed:
+                report += f"\nConfirmed {result.lower()} test cases:\n"
+                for test_id in confirmed:
+                    report += f"  {test_id}\n"
+
+        if flaky:
+            report += "\nFlaky test cases (failed, but passed when run individually):\n"
+            for test_id in flaky:
+                report += f"  {test_id}\n"
 
         # Describe resource leaks.
         if len(outputs['lingering_jails']) > 0:
