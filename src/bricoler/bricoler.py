@@ -1071,7 +1071,7 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
         }
 
     def _report(self, *args):
-        with open(Path.cwd() / "kyua-report.txt", 'r') as f:
+        with open(Path.cwd() / "kyua-report.txt", 'r', errors='replace') as f:
             return pydoc.pager(f.read())
 
     actions = {
