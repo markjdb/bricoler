@@ -216,6 +216,7 @@ class BhyveRun(VMRun):
                 "-o", f"bootrom={bootrom}"
             ])
         bhyve_cmd.extend(["-M"]) # Needed for unprivileged bhyve.
+        bhyve_cmd.extend(["-o", "rundir=/tmp"])
         bhyve_cmd.extend(["-G", f"{self.gdb_addr[0]}:{self.gdb_addr[1]}"])
         add_device(f"{self.block_driver_name()},{self.image.path}")
         for disk in self.extra_disks:
