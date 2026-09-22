@@ -17,17 +17,18 @@ The basic idea is to simplify common src development tasks by provding a framewo
 
 ## Installation
 
-Make sure that python 3 and hatch are installed:
+Make sure that Python 3, hatch and other dependencies are installed:
 
-```
-$ pkg install python3 devel/py-hatch devel/py-pip databases/py-sqlite3
+```sh
+py="py$(pkg rall-depends python3 | sed -e s/^python// -e 's/-.*$//')"
+pkg install python3 "$py-hatch" "$py-pip" "$py-sqlite3"
 ```
 
 Run `hatch build` from the root of the repository.
 Install it locally with:
 
-```
-$ pip install dist/bricoler-0.1.0-py3-none-any.whl
+```sh
+pip install dist/bricoler-0.1.0-py3-none-any.whl
 ```
 
 This will install it to `~/.local/bin`, so make sure that is in your PATH.
@@ -42,7 +43,8 @@ Installing ccache is recommended, it will be used automatically.
 ## Usage
 
 Example:
-```
+
+```sh
 bricoler freebsd-regression-test-suite \
     --freebsd-regression-test-suite/memory=8192 \
     --freebsd-regression-test-suite/ncpus=8 \
