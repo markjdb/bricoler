@@ -1,10 +1,11 @@
 .\"
 .\" Copyright (c) Mark Johnston <markj@FreeBSD.org>
+.\" Copyright (c) Mateusz Piotrowski <0mp@FreeBSD.org>
 .\"
 .\" SPDX-License-Identifier: BSD-2-Clause
 .\"
 .Dd September 22, 2026
-.Dt bricoler 1
+.Dt BRICOLER 1
 .Os
 .Sh NAME
 .Nm bricoler
@@ -35,100 +36,128 @@ The goal is to hide much of the complexity of the underlying programs, which
 do not have consistent user interfaces, require manual setup, or have poor input
 validation.
 .Nm
-further aims to be useful both as an interactive tool for obtaining a development
-or test environment, as well as a substrate for CI systems to build and test
+further aims to be useful both
+as an interactive tool for obtaining a development or test environment,
+as well as a substrate for CI systems to build and test
 .Fx .
 .Pp
 .Nm
-provides the ability to run
-.Dq tasks ,
-which are composable units of work.
-For example, to take the latest
-.Fx
-src tree, build it, boot it in a virtual machine, and run the test suite, one
-needs to:
-.Bl -enum -offset indent -compact
-.It
-clone the src tree,
-.It
-build the world and kernel,
-.It
-create a VM image,
-.It
-boot the VM under a hypervisor,
-.It
-install various third-party packages required by the test suite, and
-load kernel modules,
-.It
-invoke
-.Xr kyua 1
-to run the test suite, and collect the result.
+supports the following command-line arguments:
+.Bl -tag -offset ident -width --show
+.It Fl -show
+List available tasks.
+.It Fl -workdir Ar path
+Set the
+.Nm
+working directory.
+This flag overrides
+.Ev BRICOLER_WORKDIR .
+Default:
+.Dq Li ~/bricoler .
 .El
 .Pp
-In
-.Nm Ns 's
-execution model, these steps are all represented by distinct tasks.
-A list of available tasks can be listed by running
+.Nm
+.Ar task
+supports
+the following arguments:
+.Bl -tag -offset ident -width --show
+.It Fl - Ns Ar task Ns / Ns Ar param Ns = Ns Ar value
+Set
+.Ar task Ap s
+.Ar param Ns eter
+to a given
+.Ar value .
 .Pp
-.Dl bricoler --show
+Task parameters have types and
+their values are validated before task execution begins.
+.It Fl -alias Ar alias
+Define a persistent
+.Ar alias
+for a given task and parameters.
 .Pp
-Tasks define a set of parameters which can be set on the command-line, or by
-other tasks.
-For instance, the
-.Dq git-checkout
-task provides a mechanism to clone or update a git repository, and defines
-parameters to specify the repository URL and branch.
-A task to build
-.Fx
-defines parameters to specify the target architecture, kernel configuration
-name, and the toolchain to use, among others.
-To get a full list of parameters used to run the task
-.Ar task ,
-run:
-.Pp
-.Dl bricoler Ar task --show
+The specified alias name may then be used as a pseudo-task to invoke the same
+task with the same parameters.
+This is useful for frequently used commands.
+Parameters may still be specified when invoking an alias, and command-line
+parameter values override those stored in the alias.
+Aliases are stored in the working directory.
+.It Fl -show
+List all parameters and actions of
+.Ar task .
 .Pp
 The output describes
 .Ar task Ns 's
 own parameters, as well as those of any tasks on which it depends.
 It also shows the current values of those parameters based on task defaults
-and command line options.
+and command-line options.
+.It Fl -wait
+Block until the lock on the working directory is released.
 .Pp
-Parameters can be set on the command-line using the syntax
-.Fl - Ns Ar task Ns / Ns Ar param Ns = Ns Ar value .
-Task parameters have types and
+Only one
 .Nm
-their values are validated before task execution begins.
+instance may run tasks in a given working directory at a given point in time.
+With the
+.Fl -wait ,
+option
+.Nm
+will block and wait instead of exiting with an error.
+.El
+.Sh TASKS
+.Nm
+provides the ability to run
+.Ar task Ns s ,
+which are composable units of work.
 .Pp
+For example, to take the latest
+.Fx
+src tree, build it, boot it in a virtual machine, and run the test suite, one
+needs to:
+.Pp
+.Bl -enum -compact
+.It
+Clone the src tree
+.It
+Build the world and kernel
+.It
+Create a VM image
+.It
+Boot the VM under a hypervisor
+.It
+Install various third-party packages
+and load kernel modules
+required by the test suite
+.It
+Invoke
+.Xr kyua 1
+to run the test suite, and collect the result
+.El
+.Pp
+In
+.Nm Ns 's
+execution model, these steps are all represented by distinct tasks.
+.Sh TASK PARAMETERS
+Tasks define a set of parameters which can be set on the command-line, or by
+other tasks.
+.Pp
+For instance:
+.Bl -dash
+.It
+The
+.Cm git-checkout
+task provides a mechanism to clone or update a Git repository, and defines
+parameters to specify the repository URL and branch.
+.It
+A task to build
+.Fx
+defines parameters to specify the target architecture, kernel configuration
+name, and the toolchain to use, among others.
+.El
+.Sh WORKING DIRECTORY
 .Nm
 tasks store their outputs and state in private working directories.
 The root of the working directory can be specified using the
 .Fl -workdir
 option.
-By default, the working directory is the value of the
-.Ev BRICOLER_WORKDIR
-environment variable, or
-.Pa ${HOME}/bricoler
-if that variable is not set.
-Only one
-.Nm
-instance may run tasks in a given working directory at a given point in time.
-If the
-.Fl -wait
-option is specified,
-.Nm
-will block until the lock on the working directory is released, rather than
-exiting with an error.
-.Pp
-The
-.Fl -alias
-option may be used to define persistent aliases for frequently used commands.
-The specified alias name may then be used as a pseudo-task to invoke the same
-task with the same parameters.
-Parameters may still be specified when invoking an alias, and command-line
-parameter values override those stored in the alias.
-Aliases are stored in the working directory.
-.Pp
 .Sh PRIVILEGES
 .Nm
 generally aims to be run as a non-root user, though this is not required.
@@ -152,49 +181,63 @@ will automatically detect this and try to use bhyve by default.
 Note that QEMU must be used when running a non-native architecture, e.g.,
 running an arm64 VM on a amd64 host.
 .Sh ENVIRONMENT
-.Bl -tag
+.Bl -tag -width "BRICOLER_WORKDIR"
 .It Ev BRICOLER_WORKDIR
-Sets the root of the working directory tree.
+The root of the working directory tree.
 .El
 .Sh EXAMPLES
+.Ss Example 1: Build, test, and debug a firewall in a VM
 Run the
 .Xr pf 4
 regression tests in an arm64 VM with 12 vCPUs running the GENERIC-KASAN kernel
 configuration:
-.Pp
 .Bd -literal -offset indent
-bricoler freebsd-regression-test-suite --freebsd-regression-test-suite/tests=sys/netpfil/pf \\
-                                       --freebsd-regression-test-suite/ncpus=12 \\
-                                       --freebsd-src-build/machine=arm64/aarch64 \\
-                                       --freebsd-src-build/kernel_config=GENERIC-KASAN
+bricoler freebsd-regression-test-suite \e
+         --freebsd-regression-test-suite/tests=sys/netpfil/pf \e
+         --freebsd-regression-test-suite/ncpus=12 \e
+         --freebsd-src-build/machine=arm64/aarch64 \e
+         --freebsd-src-build/kernel_config=GENERIC-KASAN
 .Ed
 .Pp
-Define a persistent alias for the previous command, so that it can be invoked
+That is a fairly long command to type or remember.
+Let's define a persistent alias for the that command,
+so that it can be invoked
 by simply running the
 .Dq arm64-pf
 pseudo-task:
-.Pp
 .Bd -literal -offset indent
-bricoler freebsd-regression-test-suite ... --alias arm64-pf
+bricoler freebsd-regression-test-suite \e
+         --freebsd-regression-test-suite/tests=sys/netpfil/pf \e
+         --freebsd-regression-test-suite/ncpus=12 \e
+         --freebsd-src-build/machine=arm64/aarch64 \e
+         --freebsd-src-build/kernel_config=GENERIC-KASAN \e
+         --alias arm64-pf
 .Ed
 .Pp
-From another terminal, attach the GDB debugger to the running VM:
-.Pp
+From another terminal,
+use the
+.Cm gdb
+action of the
+.Cm freebsd-regression-test-suite
+task to
+attach the GDB debugger to the running VM with either:
 .Bd -literal -offset indent
 bricoler arm64-pf gdb
 .Ed
-or
+.Pp
+or:
 .Bd -literal -offset indent
 bricoler freebsd-regression-test-suite gdb
 .Ed
-.Pp
+.Ss Example 2: Use an external src tree
 To run the test suite against an externally managed src tree instead of
 one managed by
 .Nm ,
 set the
-.Dq url
+.Cm url
 parameter:
-.Pp
 .Bd -literal -offset indent
-bricoler freebsd-regression-test-suite --freebsd-src-git-checkout/url=/home/markj/src ...
+bricoler freebsd-regression-test-suite \e
+         --freebsd-src-git-checkout/url=/home/markj/src \e
+         [...]
 .Ed
