@@ -41,17 +41,32 @@ class SSHCommandRunner:
         result = self.run_cmd(cmd, capture_output=True, text=True)
         return result.stdout.strip()
 
-    def scp_from(self, src: Path, dst: Path):
-        scp_cmd = [
-            "scp",
+    def _scp_flags(self) -> List[str]:
+        return [
             "-r",
             "-o", "UserKnownHostsFile=/dev/null",
             "-o", "StrictHostKeyChecking=no",
             "-P", str(self.port),
             "-i", str(self.key),
+        ]
+
+    def scp_from(self, src: Path, dst: Path):
+        scp_cmd = [
+            "scp",
+            *self._scp_flags(),
             f"root@{self.addr}:{src}",
             str(dst),
         ]
+        run_cmd(scp_cmd, check_result=True)
+
+    def scp_to(self, src: Path, dst: Path):
+        scp_cmd = [
+            "scp",
+            *self._scp_flags(),
+            str(src),
+            f"root@{self.addr}:{dst}",
+        ]
+        self.run_cmd(["mkdir", "-p", str(dst.parent)])
         run_cmd(scp_cmd, check_result=True)
 
 
