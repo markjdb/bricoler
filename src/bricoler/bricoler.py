@@ -933,6 +933,7 @@ class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
         "dummymbuf",
         "dummynet",
         "fusefs",
+        "hwpmc",
         "if_bridge", "if_enc", "if_epair", "if_geneve", "if_gre", "if_lagg", "if_ovpn", "if_stf", "if_wg",
         "ipdivert",
         "ipfw", "ipfw_nat", "ipfw_nptv6",
