@@ -2011,6 +2011,8 @@ class SyzkallerBuildTask(Task):
 
 
 class SyzkallerFuzzFreeBSDBuildTask(FreeBSDSrcBuildAndInstallTask):
+    make_options = " ".join(["WITHOUT_LLDB=", "WITHOUT_LIB32="])
+
     def run(self, ctx):
         with open("SYZKALLER", "w") as f:
             f.write("# Added by bricoler\n"
