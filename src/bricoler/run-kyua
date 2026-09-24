@@ -72,7 +72,7 @@ for i in $(jot $COUNT); do
     # kyua refuses to overwrite its output database.
     rm -f $REPORT_DB
 
-    kyua -v parallelism=$PARALLELISM \
+    time kyua -v parallelism=$PARALLELISM -v execplan=time \
         -v test_suites.FreeBSD.unprivileged_user=tests \
         -v test_suites.FreeBSD.allow_sysctl_side_effects=1 \
         -v test_suites.FreeBSD.fibs="$FIBS" \
