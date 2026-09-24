@@ -28,7 +28,7 @@ Run `hatch build` from the root of the repository.
 Install it locally with:
 
 ```sh
-pip install dist/bricoler-0.1.0-py3-none-any.whl
+pip install dist/bricoler-0.2.0-py3-none-any.whl
 ```
 
 This will install it to `~/.local/bin`, so make sure that is in your PATH.
