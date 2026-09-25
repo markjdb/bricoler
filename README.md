@@ -17,6 +17,20 @@ The basic idea is to simplify common src development tasks by provding a framewo
 
 ## Installation
 
+```sh
+pkg install bricoler
+```
+
+There is a bricoler man page, so you can run `man bricoler` to get usage information and examples.
+
+bricoler ships with a completion script for bash.
+I find this very very useful.
+If you use a different shell, please try adding a completion script for it and submit a PR.
+
+Installing ccache is recommended, it will be used automatically.
+
+### Installation From Source
+
 Make sure that Python 3, hatch and other dependencies are installed:
 
 ```sh
@@ -24,21 +38,19 @@ py="py$(pkg rall-depends python3 | sed -e s/^python// -e 's/-.*$//')"
 pkg install python3 "$py-hatch" "$py-pip" "$py-sqlite3"
 ```
 
-Run `hatch build` from the root of the repository.
-Install it locally with:
+Use hatch to build bricoler:
 
 ```sh
-pip install dist/bricoler-0.2.0-py3-none-any.whl
+hatch build
+````
+
+Install bricoler locally with:
+
+```sh
+pip install dist/bricoler-*.whl
 ```
 
-This will install it to `~/.local/bin`, so make sure that is in your PATH.
-There is a bricoler man page, so you can run `man bricoler` to get usage information and examples.
-
-If you use bash and have `bash-completion` installed, this will also install a completion script to `~/.local/share/bash-completion/completions/bricoler`.
-I find this very very useful.
-If you use a different shell, please try adding a completion script for it and submit a PR.
-
-Installing ccache is recommended, it will be used automatically.
+This will install it to the `~/.local` prefix, so make sure that `~/.local/bin` is in your PATH.
 
 ## Usage
 
