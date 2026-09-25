@@ -1,10 +1,10 @@
 # bricoler
 
 bricoler is a utility for running FreeBSD src development workflows.
-The basic idea is to simplify common src development tasks by provding a framework to wrap operations like:
+The basic idea is to simplify common src development tasks by providing a framework to wrap operations like:
 - building a FreeBSD src tree,
 - constructing a VM image from the output of a build,
-- booting the VM image (using QEMU or bhyve),
+- booting the VM image (using QEMU, bhyve or RVVM),
 - running things in the guest once it has booted.
 
 -----
