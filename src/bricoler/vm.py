@@ -6,6 +6,7 @@
 
 import functools
 import os
+import re
 import shutil
 import sys
 import uuid
@@ -165,6 +166,21 @@ class BhyveRun(VMRun):
         usage = run_cmd(["bhyve", "--help"], capture_output=True, check_result=False, text=True)
         return "-M: monitor mode" in usage.stderr
 
+    def has_no_reboot_mode() -> bool:
+        # no_reboot mode was added in src commit
+        # ef821f9ba66af44cd7a760451ecd706cd24b1ecb.  Normally bhyve ignores
+        # unrecognized -o options, but that commit also renamed the internal
+        # "monitor" option to "monitor.enabled", so defining "monitor" and
+        # "monitor.no_reboot" together is an error, so we have to take care to
+        # omit "monitor.no_reboot" if the installed version of bhyve doesn't
+        # have that commit.
+        #
+        # We have no good way to check for this, so we grep a man page for the
+        # option.
+        bhyve_config = run_cmd(["man", "bhyve_config"], capture_output=True, text=True).stdout
+        bhyve_config = re.sub(r'.\x08', '', bhyve_config)
+        return "monitor.no_reboot" in bhyve_config
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.image.machine.split('/')[0] not in ('amd64', 'arm64', 'i386'):
@@ -231,8 +247,10 @@ class BhyveRun(VMRun):
                 "-o", f"bootrom={bootrom}"
             ])
         bhyve_cmd.extend(["-o", "rundir=/tmp"])
-        bhyve_cmd.extend(["-M"]) # Needed for unprivileged bhyve.
-        bhyve_cmd.extend(["-o", "monitor.no_reboot=1"])
+        if BhyveRun.has_monitor_mode():
+            bhyve_cmd.extend(["-M"]) # Needed for unprivileged bhyve.
+            if BhyveRun.has_no_reboot_mode():
+                bhyve_cmd.extend(["-o", "monitor.no_reboot=1"])
         bhyve_cmd.extend(["-G", f"{self.gdb_addr[0]}:{self.gdb_addr[1]}"])
         add_device(f"{self.block_driver_name()},{self.image.path}")
         for disk in self.extra_disks:
