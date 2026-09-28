@@ -12,6 +12,7 @@ import pydoc
 import re
 import shutil
 import sqlite3
+import subprocess
 import sys
 import textwrap
 import time
@@ -1030,6 +1031,14 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
 
         try:
             vm.boot_to_login()
+
+            ssh = SSHCommandRunner(vm.vmrun.ssh_addr, vm.vmrun.ssh_key)
+
+            profile_path = Path.cwd() / "kyua.profile"
+            if profile_path.exists():
+                ssh.scp_to(profile_path,
+                           Path("/root/.kyua/profiles/kyua_usr_tests.profile"))
+
             cmd = [
                 "/usr/tests/run-kyua",
                 "-c", str(self.count),
@@ -1043,9 +1052,14 @@ class FreeBSDRegressionTestSuiteTask(FreeBSDVMBootTask):
             report_db_path = Path.cwd() / "kyua.db"
             report_txt_path = Path.cwd() / "kyua-report.txt"
 
-            ssh = SSHCommandRunner(vm.vmrun.ssh_addr, vm.vmrun.ssh_key)
             ssh.scp_from("/root/kyua.db", report_db_path)
             ssh.scp_from("/root/kyua-report.txt", report_txt_path)
+            try:
+                ssh.scp_from("/root/.kyua/profiles/kyua_usr_tests.profile",
+                             profile_path)
+            except subprocess.CalledProcessError:
+                # Might be running a version of kyua that doesn't emit profiles.
+                warn("Failed to retrieve kyua profile from VM")
 
             lingering_jails = ssh.get_output(["jls", "-v", "-d", "name"])
             uname_a = ssh.get_output(["uname", "-a"])
