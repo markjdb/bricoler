@@ -873,16 +873,6 @@ class FreeBSDRegressionTestSuiteBuildTask(FreeBSDSrcBuildAndInstallTask):
         "WITHOUT_ZFS_TESTS=",
     ])
 
-    def run(self, ctx):
-        outputs = super().run(ctx)
-
-        # Manually install the run-kyua helper script.
-        dest = outputs['stagedir'] / "usr/tests/run-kyua"
-        with resources.as_file(resources.files("bricoler") / "run-kyua") as src:
-            shutil.copyfile(src, dest)
-        outputs['metalog'].add_file(dest, Path("usr/tests/run-kyua"), mode=0o755)
-        return outputs
-
 
 class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
     image_size = 30
@@ -974,6 +964,8 @@ class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
 
     def run(self, ctx):
         metalog = self.build.metalog
+        with resources.as_file(resources.files("bricoler") / "run-kyua") as src:
+            metalog.add_file(src, Path("usr/tests/run-kyua"), mode=0o755)
         metalog.add_symlink(symlink_dest='/usr/local/bin/clang', path_in_image='usr/bin/cc')
         metalog.add_symlink(symlink_dest='/usr/local/bin/ld.lld', path_in_image='usr/bin/ld')
         metalog.add_symlink(symlink_dest='/usr/local/bin/clang-cpp', path_in_image='usr/bin/cpp')
