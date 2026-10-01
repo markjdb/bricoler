@@ -384,6 +384,9 @@ class FreeBSDVMImageTask(Task):
         'rc_kld_list': TaskParameter(
             description="A list of kernel modules to load at boot time",
         ),
+        'rc_services_list': TaskParameter(
+            description="A list of rc services to enable at boot time",
+        ),
         'single_user': TaskParameter(
             description="Boot into single-user mode",
             default=False,
@@ -447,10 +450,8 @@ class FreeBSDVMImageTask(Task):
                         "PermitRootLogin without-password",
                         source=(stagedir / "etc/ssh/sshd_config"))
 
-        if self.rc_kld_list is not None:
-            kld_list = self.rc_kld_list.split()
-        else:
-            kld_list = []
+        kld_list = self.rc_kld_list.split() if self.rc_kld_list else []
+        service_list = self.rc_services_list.split() if self.rc_services_list else []
         add_config_file("etc/rc.conf",
                         f"hostname={self.hostname}",
                         "ifconfig_vtnet0=SYNCDHCP",
@@ -459,6 +460,7 @@ class FreeBSDVMImageTask(Task):
                         "sshd_enable=YES",
                         "sshd_rsa_enable=NO",
                         *[f"kld_list=\"${{kld_list}} {kld}\"" for kld in kld_list],
+                        *[f"{service}_enable=YES" for service in service_list],
                         f"""
                         zfs_enable=YES
                         zpool_reguid={zfs_pool_name}
@@ -902,6 +904,7 @@ class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
         "isc-dhcp44-server",
         "jq",
         "ksh93",
+        "linux_base-rl9",
         "llvm",
         "ndisc6",
         "net/py-dpkt",
@@ -948,6 +951,10 @@ class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
         "tcpmd5",
         "unionfs",
         "zfs",
+    ])
+
+    rc_services_list = " ".join([
+        "linux",
     ])
 
     sysctls = " ".join([
