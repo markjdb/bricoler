@@ -61,7 +61,7 @@ class GitRepository:
         return self.git_output(["rev-parse", "--is-shallow-repository"]) == "true"
 
     def clone(self, shallow=True):
-        if not (self.path / ".git").exists():
+        if not (self.path / ".git").exists() and not (self.path / ".jj").exists():
             if self.external:
                 raise ValueError(
                     f"Repository path '{self.url}' does not exist or is not a repo clone"
