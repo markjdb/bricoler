@@ -307,7 +307,7 @@ class FreeBSDSrcBuildTask(Task):
         return {
             'machine': f"{machine}/{machine_arch}",
             'metalog': mtree,
-            'objdir': objdir / self.src.repo.path.relative_to("/") / f"{machine}.{machine_arch}",
+            'objdir': objdir,
             'repo': self.src.repo,
             'stagedir': stagedir,
         }
@@ -2130,14 +2130,13 @@ class SyzkallerFuzzFreeBSDTask(Task):
 
             image_path = self.vm_image.image.path
 
-        objdir = self.vm_image
-
         workdir = Path.cwd() / "workdir"
         workdir.mkdir(exist_ok=True)
 
-        machine = self.vm_image.image.machine.split('/', maxsplit=1)[1]
+        (machine, machine_arch) = self.vm_image.image.machine.split('/', maxsplit=1)
+        objdir = self.vm_image.objdir / self.freebsd_src.repo.path.relative_to("/") / f"{machine}.{machine_arch}"
         params = {
-            'target': f"freebsd/{machine}",
+            'target': f"freebsd/{machine_arch}",
             'workdir': str(workdir),
             'type': f"{self.hypervisor.value.lower()}",
             'syzkaller': str(self.syzkaller.repo.path),
@@ -2147,7 +2146,7 @@ class SyzkallerFuzzFreeBSDTask(Task):
             'sshkey': str(self.vm_image.ssh_key),
             'procs': 2,
             'kernel_src': str(self.freebsd_src.repo.path),
-            'kernel_obj': str(self.vm_image.objdir / "sys" / "SYZKALLER"),
+            'kernel_obj': str(objdir / "sys" / "SYZKALLER"),
             'vm': {
                 'cpu': self.vm_ncpu,
                 'mem': str(self.vm_memory) + "M",
