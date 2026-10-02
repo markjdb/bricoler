@@ -165,7 +165,7 @@ class BhyveRun(VMRun):
     @staticmethod
     @functools.cache
     def has_monitor_mode() -> bool:
-        usage = run_cmd(["bhyve", "--help"], capture_output=True, check_result=False, text=True)
+        usage = run_cmd(["bhyve", "-h"], capture_output=True, text=True)
         return "-M: monitor mode" in usage.stderr
 
     def has_no_reboot_mode() -> bool:
