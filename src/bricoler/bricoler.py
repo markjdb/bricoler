@@ -307,7 +307,7 @@ class FreeBSDSrcBuildTask(Task):
         return {
             'machine': f"{machine}/{machine_arch}",
             'metalog': mtree,
-            'objdir': objdir / self.src.repo.path.relative_to("/") / f"{machine}.{machine_arch}",
+            'objdir': objdir,
             'repo': self.src.repo,
             'stagedir': stagedir,
         }
@@ -1317,6 +1317,120 @@ class FreeBSDDTraceTestSuiteTask(FreeBSDRegressionTestSuiteTask):
     }
 
 
+class FreeBSDReleaseInstallerBuildTask(FreeBSDSrcBuildTask):
+    name = "freebsd-release-installer-build"
+
+    make_targets = "buildworld buildkernel"
+    kernel_only = False
+    clean = True
+
+
+class FreeBSDReleaseInstallerImageTask(Task):
+    """
+    Build a FreeBSD release(7) installer image.
+    """
+    name = "freebsd-release-installer-image"
+
+    inputs = {
+        'src': FreeBSDSrcGitCheckoutTask,
+        'build': FreeBSDReleaseInstallerBuildTask,
+    }
+
+    outputs = {
+        'destdir': Path,
+    }
+
+    parameters = {
+        'include_src': TaskParameter(
+            description="Include src tree in the image",
+            default=True,
+            type=bool,
+        ),
+        'ports_tree': TaskParameter(
+            description="Path to ports tree to include in the image",
+            default=None,
+            type=Path,
+        ),
+        'include_third_party': TaskParameter(
+            description="Include extra useful third-party packages in the image",
+            default=True,
+            type=bool,
+        ),
+        'include_distsets': TaskParameter(
+            description="Include distsets and MANIFEST in the image",
+            default=True,
+            type=bool,
+        ),
+        'include_pkgbase': TaskParameter(
+            description="Include a pkgbase repo in the image instead of dist tarballs",
+            default=True,
+            type=bool,
+        ),
+        'media': TaskParameter(
+            description="Space-separated list of desired release media to build",
+            type=str,  # XXX-MJ List[str]
+            default='memstick'
+        ),
+    }
+
+    def run(self, ctx):
+        (machine, machine_arch) = self.build.machine.split('/', maxsplit=1)
+        ports_tree = self.ports_tree or '/nonexistent'
+
+        target_to_image = {
+            'cdrom': 'disc1.iso',
+            'dvdrom': 'dvd1.iso',
+            'memstick': 'memstick.img',
+            'mini-memstick': 'mini-memstick.img',
+        }
+
+        release_targets = self.media.split(' ')
+        for t in release_targets:
+            if t not in target_to_image:
+                raise ValueError(f"Unknown release media '{image_id}', please consult release(7).")
+        images = [target_to_image[t] for t in release_targets]
+
+        if self.include_distsets:
+            release_targets.append('ftp')
+        if self.include_pkgbase:
+            release_targets.append('pkgbase-repo.tar')
+
+        cmd = [
+            'make', '-C', str(self.src.repo.path / 'release'),
+            "SRCCONF=/dev/null",
+            "__MAKE_CONF=/dev/null",
+            "SRC_ENV_CONF=/dev/null",
+            f"TARGET={machine}",
+            f"TARGET_ARCH={machine_arch}",
+            f"WORLDDIR={self.src.repo.path}",
+            f"PORTSDIR={ports_tree}",
+            f"RELEASE_TARGETS={' '.join(release_targets)}",
+            f"IMAGES={' '.join(images)}",
+        ]
+        env = {
+            "MAKEOBJDIRPREFIX": self.build.objdir,
+        }
+
+        if not self.include_src:
+            cmd.append('-DNOSRC')
+        if not self.ports_tree:
+            cmd.append('-DNOPORTS')
+        if not self.include_third_party:
+            cmd.append('-DNOPKG')
+        if not self.include_distsets:
+            cmd.append('-DNODISTSETS')
+        if not self.include_pkgbase:
+            cmd.append('-DNOPKGBASE')
+
+        self.run_cmd(cmd + ['clean', '-ss', '-de'], env=env)
+        self.run_cmd(cmd + ['real-release', '-ss', '-de'], env=env)
+        self.run_cmd(cmd + ['release-install', f'DESTDIR={Path.cwd()}'], env=env)
+
+        return {
+            'destdir': Path.cwd(),
+        }
+
+
 class CheriBSDSrcGitCheckoutTask(FreeBSDSrcGitCheckoutTask):
     name = "cheribsd-src-git-checkout"
 
@@ -2130,14 +2244,13 @@ class SyzkallerFuzzFreeBSDTask(Task):
 
             image_path = self.vm_image.image.path
 
-        objdir = self.vm_image
-
         workdir = Path.cwd() / "workdir"
         workdir.mkdir(exist_ok=True)
 
-        machine = self.vm_image.image.machine.split('/', maxsplit=1)[1]
+        (machine, machine_arch) = self.vm_image.image.machine.split('/', maxsplit=1)
+        objdir = self.vm_image.objdir / self.freebsd_src.repo.path.relative_to("/") / f"{machine}.{machine_arch}"
         params = {
-            'target': f"freebsd/{machine}",
+            'target': f"freebsd/{machine_arch}",
             'workdir': str(workdir),
             'type': f"{self.hypervisor.value.lower()}",
             'syzkaller': str(self.syzkaller.repo.path),
@@ -2147,7 +2260,7 @@ class SyzkallerFuzzFreeBSDTask(Task):
             'sshkey': str(self.vm_image.ssh_key),
             'procs': 2,
             'kernel_src': str(self.freebsd_src.repo.path),
-            'kernel_obj': str(self.vm_image.objdir / "sys" / "SYZKALLER"),
+            'kernel_obj': str(objdir / "sys" / "SYZKALLER"),
             'vm': {
                 'cpu': self.vm_ncpu,
                 'mem': str(self.vm_memory) + "M",
