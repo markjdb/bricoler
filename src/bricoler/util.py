@@ -142,8 +142,8 @@ def warn(message: str):
     print(colour("WARN", ANSIColour.YELLOW) + f": {message}", file=sys.stderr)
 
 
-def unused_tcp_addr() -> Tuple[str, int]:
-    with socket.create_server(('localhost', 0), family=socket.AF_INET) as s:
+def unused_tcp_addr(host='localhost') -> Tuple[str, int]:
+    with socket.create_server((host, 0), family=socket.AF_INET) as s:
         return s.getsockname()
 
 

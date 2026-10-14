@@ -8,6 +8,7 @@ import functools
 import os
 import re
 import shutil
+import socket
 import sys
 import uuid
 from abc import abstractmethod
@@ -124,6 +125,7 @@ class VMRun:
         self.ssh_key = ssh_key
         self.gdb_addr = unused_tcp_addr()
         self.ssh_addr = unused_tcp_addr()
+        self.vnc_addr = unused_tcp_addr(socket.gethostname())
 
     @abstractmethod
     def setup(self) -> List[Any]: ...
@@ -259,6 +261,8 @@ class BhyveRun(VMRun):
             add_device(f"{self.network_driver_name()},slirp,open,hostfwd=tcp:{self.ssh_addr[0]}:{self.ssh_addr[1]}-:22")
         for share in self.p9_shares:
             add_device(f"virtio-9p,{share[0]}={str(share[1])}")
+        add_device(f"fbuf,tcp={self.vnc_addr[0]}:{self.vnc_addr[1]}")
+        add_device("xhci,tablet")
 
         bhyve_cmd.extend([vmname])
 

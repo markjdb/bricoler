@@ -788,6 +788,8 @@ class FreeBSDVMBootTask(Task):
             f.write(f"{vmrun.gdb_addr[0]}:{vmrun.gdb_addr[1]}")
         with open(Path.cwd() / "ssh-addr", "w") as f:
             f.write(f"{vmrun.ssh_addr[0]}:{vmrun.ssh_addr[1]}")
+        with open(Path.cwd() / "vnc-addr", "w") as f:
+            f.write(f"{vmrun.vnc_addr[0]}:{vmrun.vnc_addr[1]}")
         # Symlink the ssh key as well.
         ssh_key_dest = Path.cwd() / "ssh_key"
         ssh_key_dest.unlink(missing_ok=True)
@@ -858,9 +860,14 @@ class FreeBSDVMBootTask(Task):
         ssh = SSHCommandRunner((host, portstr), Path.cwd() / "ssh_key")
         ssh.run_cmd(list(args))
 
+    def _vnc_addr(self, *args):
+        with open(Path.cwd() / "vnc-addr", "r") as f:
+            print(f.read().strip())
+
     actions = {
         'gdb': _gdb,
         'ssh': _ssh,
+        'vnc-addr': _vnc_addr,
     }
 
 
