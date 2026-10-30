@@ -888,6 +888,7 @@ class FreeBSDRegressionTestSuiteVMImageTask(FreeBSDVMImageTask):
         "net.inet.ip.fw.default_to_accept=1",
         "net.inet.ipf.jail_allowed=1",
         "net.fibs=8",
+        "vfs.usermount=1",
     ])
 
     packages = " ".join([
