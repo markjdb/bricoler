@@ -31,6 +31,10 @@ If you use a different shell, please try adding a completion script for it and s
 
 Installing ccache is recommended, it will be used automatically.
 
+bricoler prefers to run as a non-root user.
+To enable running bhyve as a non-root user, make sure to install `libslirp` and add your user to the `vmm` group.
+Note, the `vmm` group is only available on FreeBSD-CURRENT.
+
 ### Installation From Source
 
 Make sure that Python 3, hatch and other dependencies are installed:
