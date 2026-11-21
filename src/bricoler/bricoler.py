@@ -168,6 +168,15 @@ class FreeBSDSrcGitCheckoutTask(GitCheckoutTask):
         return outputs
 
 
+class FreeBSDPortsGitCheckoutTask(GitCheckoutTask):
+    """
+    Clone the FreeBSD ports tree, or update an existing clone.
+    """
+    name = "freebsd-ports-git-checkout"
+    url = "anongit@git.freebsd.org:ports.git"
+    branch = "main"
+
+
 class FreeBSDSrcBuildTask(Task):
     """
     Build a FreeBSD source tree.  On its own this does nothing, the invoker
@@ -216,6 +225,7 @@ class FreeBSDSrcBuildTask(Task):
 
     outputs = {
         'machine': str,
+        'makeobjdirprefix': Path,
         'metalog': MtreeFile,
         'objdir': Path,
         'repo': FreeBSDSrcRepository,
@@ -306,6 +316,7 @@ class FreeBSDSrcBuildTask(Task):
 
         return {
             'machine': f"{machine}/{machine_arch}",
+            'makeobjdirprefix': objdir,
             'metalog': mtree,
             'objdir': objdir / self.src.repo.path.relative_to("/") / f"{machine}.{machine_arch}",
             'repo': self.src.repo,
@@ -1324,6 +1335,118 @@ class FreeBSDDTraceTestSuiteTask(FreeBSDRegressionTestSuiteTask):
     inputs = {
         'vm_image': FreeBSDDTraceTestSuiteVMImageTask,
     }
+
+
+class FreeBSDReleaseInstallerBuildTask(FreeBSDSrcBuildTask):
+    make_targets = "buildworld buildkernel"
+    kernel_only = False
+    clean = True
+
+
+class FreeBSDReleaseInstallerImageTask(Task):
+    """
+    Build a FreeBSD release(7) installer image.
+    """
+    name = "freebsd-release-installer-image"
+
+    inputs = {
+        'src': FreeBSDSrcGitCheckoutTask,
+        'ports': FreeBSDPortsGitCheckoutTask,
+        'build': FreeBSDReleaseInstallerBuildTask,
+    }
+
+    outputs = {
+        'destdir': Path,
+    }
+
+    parameters = {
+        'include_src': TaskParameter(
+            description="Include src tree in the image",
+            default=True,
+            type=bool,
+        ),
+        'include_ports': TaskParameter(
+            description="Include ports tree in the image",
+            default=True,
+            type=bool,
+        ),
+        'include_third_party': TaskParameter(
+            description="Include extra useful third-party packages in the image",
+            default=True,
+            type=bool,
+        ),
+        'include_distsets': TaskParameter(
+            description="Include distsets and MANIFEST in the image",
+            default=True,
+            type=bool,
+        ),
+        'include_pkgbase': TaskParameter(
+            description="Include a pkgbase repo in the image instead of dist tarballs",
+            default=True,
+            type=bool,
+        ),
+        'media': TaskParameter(
+            description="Space-separated list of desired release media to build",
+            type=str,  # XXX-MJ List[str]
+            default='memstick'
+        ),
+    }
+
+    def run(self, ctx):
+        (machine, machine_arch) = self.build.machine.split('/', maxsplit=1)
+
+        target_to_image = {
+            'cdrom': 'disc1.iso',
+            'dvdrom': 'dvd1.iso',
+            'memstick': 'memstick.img',
+            'mini-memstick': 'mini-memstick.img',
+        }
+
+        release_targets = self.media.split(' ')
+        for t in release_targets:
+            if t not in target_to_image:
+                raise ValueError(f"Unknown release media '{image_id}', please consult release(7).")
+        images = [target_to_image[t] for t in release_targets]
+
+        if self.include_distsets:
+            release_targets.append('ftp')
+        if self.include_pkgbase:
+            release_targets.append('pkgbase-repo.tar')
+
+        cmd = [
+            'make', '-C', str(self.src.repo.path / 'release'),
+            "SRCCONF=/dev/null",
+            "__MAKE_CONF=/dev/null",
+            "SRC_ENV_CONF=/dev/null",
+            f"TARGET={machine}",
+            f"TARGET_ARCH={machine_arch}",
+            f"WORLDDIR={self.src.repo.path}",
+            f"PORTSDIR={self.ports.repo.path}",
+            f"RELEASE_TARGETS={' '.join(release_targets)}",
+            f"IMAGES={' '.join(images)}",
+        ]
+        env = {
+            "MAKEOBJDIRPREFIX": self.build.makeobjdirprefix,
+        }
+
+        if not self.include_src:
+            cmd.append('-DNOSRC')
+        if not self.include_ports:
+            cmd.append('-DNOPORTS')
+        if not self.include_third_party:
+            cmd.append('-DNOPKG')
+        if not self.include_distsets:
+            cmd.append('-DNODISTSETS')
+        if not self.include_pkgbase:
+            cmd.append('-DNOPKGBASE')
+
+        self.run_cmd(cmd + ['clean', '-ss', '-de'], env=env)
+        self.run_cmd(cmd + ['real-release', '-ss', '-de'], env=env)
+        self.run_cmd(cmd + ['release-install', f'DESTDIR={Path.cwd()}'], env=env)
+
+        return {
+            'destdir': Path.cwd(),
+        }
 
 
 class CheriBSDSrcGitCheckoutTask(FreeBSDSrcGitCheckoutTask):
