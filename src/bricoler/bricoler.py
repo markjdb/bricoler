@@ -1326,6 +1326,47 @@ class FreeBSDDTraceTestSuiteTask(FreeBSDRegressionTestSuiteTask):
     }
 
 
+class FreeBSDBoundsSafetyTestSuiteBuildTask(FreeBSDRegressionTestSuiteBuildTask):
+    # Needs the devel/llvm-apple package on the build host.
+    kernel_config = "GENERIC-BOUNDS_SAFETY"
+    toolchain = "llvm-apple64"
+
+    def run(self, ctx):
+        # These LinuxKPI drivers take __typeof__ of a counted_by flexible array
+        # member, which the bounds-safety compiler does not support yet.
+        with open("BOUNDS_SAFETY", "w") as f:
+            f.write("# Added by bricoler\n"
+                   f"include {self.kernel_config}\n"
+                    "ident BOUNDS_SAFETY\n"
+                    "makeoptions WITHOUT_MODULES=\"iwlwifi rtw89\"\n")
+        self.kernel_config = str(Path.cwd() / "BOUNDS_SAFETY")
+        return super().run(ctx)
+
+
+class FreeBSDBoundsSafetyTestSuiteVMImageTask(FreeBSDRegressionTestSuiteVMImageTask):
+    # Log every soft trap so violations show up on the console.
+    sysctls = FreeBSDRegressionTestSuiteVMImageTask.sysctls + " " + " ".join([
+        "debug.bounds_soft_trap_verbose=1",
+        "debug.bounds_soft_trap_max_pps=0",
+    ])
+
+    inputs = {
+        'build': FreeBSDBoundsSafetyTestSuiteBuildTask,
+    }
+
+
+class FreeBSDBoundsSafetyTestSuiteTask(FreeBSDRegressionTestSuiteTask):
+    """
+    Boot a kernel built with -fbounds-safety and run the FreeBSD regression
+    test suite.
+    """
+    name = "freebsd-bounds-safety-test-suite"
+
+    inputs = {
+        'vm_image': FreeBSDBoundsSafetyTestSuiteVMImageTask,
+    }
+
+
 class CheriBSDSrcGitCheckoutTask(FreeBSDSrcGitCheckoutTask):
     name = "cheribsd-src-git-checkout"
 
