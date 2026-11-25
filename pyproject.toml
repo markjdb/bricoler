@@ -24,6 +24,8 @@ classifiers = [
 ]
 dependencies = [
   "pexpect",
+  "Cerberus>=1.3.4",
+  "coloredlogs>=15.0.1"
 ]
 
 [project.scripts]

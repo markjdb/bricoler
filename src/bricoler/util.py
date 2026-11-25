@@ -5,6 +5,8 @@
 #
 
 import functools
+import json
+import logging as log
 import os
 import signal
 import socket
@@ -13,7 +15,48 @@ import sys
 from contextlib import contextmanager
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
+
+def sysctl(name: str, isString: bool = False) -> str | int:
+    """
+    Read a sysctl OID using sysctl(8).
+    """
+    result = run_cmd(["sysctl", "-n", name], capture_output=True, text=True)
+    value = result.stdout.rstrip("\n")
+    if not isString:
+        try:
+            return int(value)
+        except ValueError:
+            pass
+    return value
+
+def ncpu() -> int:
+    return int(sysctl("hw.ncpu"))
+
+def install_missing_packages(packages: List[str]):
+    result = run_cmd(
+        ["pkg", "query", "%n"],
+        check_result=True,
+        capture_output=True
+    )
+    installed = set(result.stdout.decode().splitlines())
+    for package in packages:
+        if package in installed:
+            continue
+        log.info("Installing missing package %s", package)
+        run_cmd(
+            ["pkg", "install", package],
+            check_result=True,
+        )
+
+@contextmanager
+def pushd(dir):
+    curdir = os.getcwd()
+    os.chdir(dir)
+    try:
+        yield
+    finally:
+        os.chdir(curdir)
 
 
 class EmailReport:
@@ -72,11 +115,6 @@ def chdir(dir: Path, **kwargs):
 @functools.cache
 def host_machine() -> str:
     return sysctl("hw.machine") + "/" + sysctl("hw.machine_arch")
-
-
-def sysctl(name: str) -> str:
-    result = run_cmd(["sysctl", "-n", name], capture_output=True, text=True)
-    return result.stdout.strip()
 
 
 def run_cmd(

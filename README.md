@@ -73,6 +73,42 @@ bricoler freebsd-regression-test-suite \
 
 More extensive usage information can be found in the man page `man share/bricoler.1`.
 
+## Benchmarks
+
+bricoler can run benchmarks and collect various metrics while they're running. The set of benchmarks to run (identified as `<suite>:<benchmark>` pairs), the number of iterations, and the metrics are specified using a JSON-based configuration file e.g.:
+
+```json
+{
+  "benchmarks": [
+    "freebsd-src:buildkernel"
+  ],
+  "description": "Build the FreeBSD kernel",
+  "iterations": 1,
+  "metrics": {
+    "sysctl": [
+      {
+        "name": "vm stats",
+        "oids": [
+          "vm.pmap.pde.promotions",
+          "vm.pmap.pde.mappings",
+          "vm.pmap.pde.p_failures",
+          "vm.pmap.pde.demotions"
+        ]
+      }
+    ]
+  }
+}
+```
+
+Then run:
+
+```
+bricoler bench --bench/workload_config=buildkernel.conf
+```
+
+Benchmark suites are built automatically and can be set up
+separately with `--bench/action=setup`.
+
 ## License
 
 `bricoler` is distributed under the terms of the [BSD-2-Clause](https://spdx.org/licenses/BSD-2-Clause.html) license.

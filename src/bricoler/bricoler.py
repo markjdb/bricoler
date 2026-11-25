@@ -16,16 +16,24 @@ import subprocess
 import sys
 import textwrap
 import time
+import coloredlogs
+import logging as log
+
+from datetime import datetime
 from enum import Enum
 from importlib import resources
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Type, Union
 
+from .bench.config import load_run_config
+from .bench.metric import MetricRegistry
+from .bench.workload import load_workloads, run_workloads, setup_suites
+
 from .config import Config
 from .git import GitRepository
 from .mtree import MtreeFile
 from .task import Task, TaskParameter, TaskParameterBinding, TaskMeta, TaskSchedule
-from .util import EmailReport, P9ShareList, chdir, host_machine, info, run_cmd, warn
+from .util import EmailReport, P9ShareList, chdir, host_machine, info, run_cmd, warn, ncpu
 from .vm import FreeBSDVM, VMImage, VMHypervisor, BhyveRun, QEMURun, RVVMRun, SSHCommandRunner, VMRun
 
 
@@ -2178,6 +2186,88 @@ class SyzkallerFuzzFreeBSDTask(Task):
             cmd.append("-debug")
         self.run_cmd(cmd)
 
+
+class BenchmarkTask(Task):
+    """
+    Run a set of benchmarks and collect metrics.
+
+    The benchmarks and the metrics one wishes to sample during
+    their runtime described by a workload configuration file.
+    """
+    name = "bench"
+
+    parameters = {
+        'workload_config': TaskParameter(
+            description="Path to the benchmark run configuration file",
+            required=True,
+        ),
+        'action': TaskParameter(
+            description="Set up the benchmark suites or run the benchmarks",
+            choices=["setup", "run"],
+            default="run",
+        ),
+        'verbose': TaskParameter(
+            description="Increase logging level and record benchmark output",
+            default=False,
+        ),
+    }
+
+    def run(self, ctx):
+        coloredlogs.install(level="DEBUG" if self.verbose else "INFO")
+
+        config_path = Path(self.workload_config)
+        if not config_path.is_absolute() and not config_path.is_file():
+            config_path = self.config.workdir / config_path
+
+        run_config = load_run_config(config_path)
+
+        if self.action not in ("setup", "run"):
+            raise ValueError(f"Unknown benchmark action '{self.action}'")
+
+        match self.action:
+            case "setup":
+                # Load the JSON definitions of the selected benchmark suites,
+                # then clone and build their repositories.
+                suites, workloads = load_workloads(run_config)
+                setup_suites(suites, workloads)
+            case "run":
+                suites, workloads = load_workloads(run_config)
+
+                # Load the metrics requested by the run configuration.
+                MetricRegistry.load_metrics(run_config["metrics"])
+
+                # Make sure the benchmark suites are built before running them.
+                suite_dirs, suite_revisions = setup_suites(suites, workloads)
+
+                cpus = ncpu()
+                results = run_workloads(workloads, suite_dirs, cpus,
+                                        self.verbose)
+
+                # Add metadata describing the run.
+                results["uname"] = os.uname().version
+                results["host"] = os.uname().nodename
+                results["ncpu"] = cpus
+                results["date"] = datetime.now().isoformat(timespec="seconds")
+                results["description"] = run_config.get("description")
+                results["config"] = str(config_path)
+                results["suites"] = {
+                    name: {"revision": suite_revisions.get(name)}
+                    for name in suite_dirs
+                }
+
+                config_name = os.path.splitext(config_path.name)[0]
+                result_filename = f"{config_name}-{datetime.now().strftime('%d%m%Y-%H%M')}.json"
+                results_dir = Path("./results")
+                results_dir.mkdir(parents=True, exist_ok=True)
+                result_path = results_dir / result_filename
+                with result_path.open("w") as file:
+                    json.dump(results, file, indent=2)
+
+                log.info(f"Wrote benchmarking results to '{result_filename}'")
+
+        return {}
+
+
 #
 # Features to add:
 # - automatic bisection for build and test failures
@@ -2186,7 +2276,6 @@ class SyzkallerFuzzFreeBSDTask(Task):
 # - ability to skip dependent tasks
 # - tasks to cross-build package repos
 # - tasks to boot FreeBSD in different clouds
-# - tasks for performance regression testing
 # - integration with project infrastructure, e.g., bugzilla, phabricator
 #   - src builds could have an option to apply patches from phab/GH first, for instance
 #
